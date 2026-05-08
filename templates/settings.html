@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Account Settings</h1>
+    <p class="text-slate-400 text-sm mt-1">
+      Manage your accounts and their bank formats. The bank format tells the parser
+      how to read CSVs from that institution.
+    </p>
+  </div>
+  <button id="show-add-form" class="btn-primary text-sm">+ Add account</button>
+</div>
+
+<!-- Add account form (hidden by default) -->
+<div id="add-form" class="hidden card p-5 mb-6 border-sky-500/30">
+  <h2 class="text-sm font-semibold text-slate-300 mb-4">New account</h2>
+  <div class="grid grid-cols-2 gap-4 mb-4">
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Account name</label>
+      <input type="text" id="add-name" placeholder="e.g. My UCCU Checking" class="text-sm w-full" />
+    </div>
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Owner</label>
+      <input type="text" id="add-owner" placeholder="e.g. sebi, olivia, joint" class="text-sm w-full" />
+    </div>
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Account type</label>
+      <select id="add-type" class="text-sm w-full">
+        <option value="checking">Checking</option>
+        <option value="savings">Savings</option>
+        <option value="credit">Credit</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Bank format</label>
+      <select id="add-bank-format" class="text-sm w-full">
+        {% for fmt, label in bank_formats.items() %}
+          <option value="{{ fmt }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="flex items-center gap-3">
+    <button id="add-save-btn" class="btn-primary text-sm">Save account</button>
+    <button id="hide-add-form" class="btn-ghost text-sm">Cancel</button>
+    <span id="add-status" class="text-xs hidden"></span>
+  </div>
+</div>
+
+<!-- Account cards -->
+<div class="space-y-3" id="accounts-list">
+  {% for acct in accounts %}
+  <div class="card p-4" data-acct-id="{{ acct.id }}">
+    <!-- View mode -->
+    <div class="view-mode flex items-center justify-between gap-4">
+      <div class="flex items-center gap-4 flex-1 min-w-0">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-lg">
+          {% if acct.type == 'credit' %}💳
+          {% elif acct.type == 'savings' %}🏦
+          {% else %}🏧{% endif %}
+        </div>
+        <div class="min-w-0">
+          <p class="text-slate-200 font-semibold">{{ acct.name }}</p>
+          <p class="text-xs text-slate-500">
+            {{ bank_formats.get(acct.bank_format, acct.bank_format or acct.type) }}
+            · {{ acct.owner }}
+            · {{ acct.tx_count }} transaction{{ 's' if acct.tx_count != 1 }}
+          </p>
+        </div>
+      </div>
+      <div class="flex gap-2 flex-shrink-0">
+        <button class="edit-btn btn-ghost text-xs">Edit</button>
+        <button class="delete-btn text-xs border border-red-800 text-red-400 hover:bg-red-900/30 rounded-lg px-3 py-1.5 transition-colors"
+                data-name="{{ acct.name }}" data-tx-count="{{ acct.tx_count }}">Delete</button>
+      </div>
+    </div>
+
+    <!-- Edit mode (hidden) -->
+    <div class="edit-mode hidden">
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Account name</label>
+          <input type="text" class="edit-name text-sm w-full" value="{{ acct.name }}" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Owner</label>
+          <input type="text" class="edit-owner text-sm w-full" value="{{ acct.owner }}" />
+        </div>
+        <div class="col-span-2">
+          <label class="block text-xs text-slate-400 mb-1">Bank format</label>
+          <select class="edit-bank-format text-sm w-full">
+            {% for fmt, label in bank_formats.items() %}
+              <option value="{{ fmt }}" {% if fmt == acct.bank_format %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button class="save-edit-btn btn-primary text-xs">Save</button>
+        <button class="cancel-edit-btn btn-ghost text-xs">Cancel</button>
+        <span class="edit-status text-xs hidden"></span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+// ── Add account ───────────────────────────────────────────────────────────────
+document.getElementById('show-add-form').addEventListener('click', () => {
+  document.getElementById('add-form').classList.remove('hidden');
+  document.getElementById('show-add-form').classList.add('hidden');
+});
+document.getElementById('hide-add-form').addEventListener('click', () => {
+  document.getElementById('add-form').classList.add('hidden');
+  document.getElementById('show-add-form').classList.remove('hidden');
+});
+
+document.getElementById('add-save-btn').addEventListener('click', async () => {
+  const name       = document.getElementById('add-name').value.trim();
+  const owner      = document.getElementById('add-owner').value.trim();
+  const type       = document.getElementById('add-type').value;
+  const bankFormat = document.getElementById('add-bank-format').value;
+  const status     = document.getElementById('add-status');
+
+  if (!name || !owner) {
+    status.textContent = 'Name and owner are required.';
+    status.className = 'text-xs text-red-400';
+    status.classList.remove('hidden');
+    return;
+  }
+
+  const res = await fetch('/api/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, type, owner, bank_format: bankFormat }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    status.textContent = '✓ Account saved — reloading…';
+    status.className = 'text-xs text-emerald-400';
+    status.classList.remove('hidden');
+    setTimeout(() => location.reload(), 700);
+  } else {
+    status.textContent = `✗ ${data.error || 'Failed'}`;
+    status.className = 'text-xs text-red-400';
+    status.classList.remove('hidden');
+  }
+});
+
+// ── Delete account ────────────────────────────────────────────────────────────
+document.querySelectorAll('.delete-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const card    = btn.closest('[data-acct-id]');
+    const acctId  = card.dataset.acctId;
+    const name    = btn.dataset.name;
+    const txCount = parseInt(btn.dataset.txCount, 10);
+
+    const warning = txCount > 0
+      ? `\n\nThis will permanently delete ${txCount} transaction${txCount !== 1 ? 's' : ''} along with it.`
+      : '';
+    if (!confirm(`Delete "${name}"?${warning}\n\nThis cannot be undone.`)) return;
+
+    const res = await fetch(`/api/accounts/${acctId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.ok) {
+      card.remove();
+    } else {
+      alert('Delete failed: ' + (data.error || 'unknown error'));
+    }
+  });
+});
+
+// ── Edit accounts ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.edit-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const card = btn.closest('[data-acct-id]');
+    card.querySelector('.view-mode').classList.add('hidden');
+    card.querySelector('.edit-mode').classList.remove('hidden');
+  });
+});
+
+document.querySelectorAll('.cancel-edit-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const card = btn.closest('[data-acct-id]');
+    card.querySelector('.view-mode').classList.remove('hidden');
+    card.querySelector('.edit-mode').classList.add('hidden');
+  });
+});
+
+document.querySelectorAll('.save-edit-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const card       = btn.closest('[data-acct-id]');
+    const acctId     = card.dataset.acctId;
+    const name       = card.querySelector('.edit-name').value.trim();
+    const owner      = card.querySelector('.edit-owner').value.trim();
+    const bankFormat = card.querySelector('.edit-bank-format').value;
+    const status     = card.querySelector('.edit-status');
+
+    const res = await fetch(`/api/accounts/${acctId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, owner, bank_format: bankFormat }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      status.textContent = '✓ Saved — reloading…';
+      status.className = 'text-xs text-emerald-400';
+      status.classList.remove('hidden');
+      setTimeout(() => location.reload(), 700);
+    } else {
+      status.textContent = `✗ ${data.error || 'Failed'}`;
+      status.className = 'text-xs text-red-400';
+      status.classList.remove('hidden');
+    }
+  });
+});
+</script>
+
+{% endblock %}

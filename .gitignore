@@ -1,0 +1,28 @@
+# ── Database (contains your actual financial data — never commit this) ─────────
+*.db
+*.db-shm
+*.db-wal
+
+# ── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# ── Environment / secrets ──────────────────────────────────────────────────────
+.env
+.env.*
+
+# ── macOS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+*.DS_Store
+
+# ── Claude Code session files ──────────────────────────────────────────────────
+.claude/
+
+# ── Uploaded CSV files (may contain account data) ─────────────────────────────
+uploads/
+*.csv

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Merchant Rules{% endblock %}
+
+{% block content %}
+
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Merchant Rules</h1>
+    <p class="text-slate-400 text-sm mt-1">
+      Saved rules override keyword matching on every future import. Patterns are matched as substrings (case-insensitive).
+    </p>
+  </div>
+  <button id="reapply-btn" class="btn-ghost text-sm">
+    Re-apply all rules to existing transactions
+  </button>
+</div>
+
+<!-- Add rule form -->
+<div class="card p-4 mb-6">
+  <h2 class="text-sm font-semibold text-slate-300 mb-3">Add a rule manually</h2>
+  <div class="flex flex-wrap gap-3 items-end">
+    <div class="flex-1 min-w-48">
+      <label class="block text-xs text-slate-400 mb-1">Merchant pattern</label>
+      <input type="text" id="new-pattern" placeholder="e.g. winco foods"
+             class="text-sm w-full" />
+    </div>
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Category</label>
+      <select id="new-category" class="text-sm">
+        {% for cat in categories %}
+          <option value="{{ cat }}">{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-center gap-2 self-end pb-1">
+      <input type="checkbox" id="new-apply-existing" class="accent-sky-500 w-4 h-4 cursor-pointer" checked />
+      <label for="new-apply-existing" class="text-sm text-slate-300 cursor-pointer whitespace-nowrap">
+        Update existing auto-categorized matches
+      </label>
+    </div>
+    <button id="add-rule-btn" class="btn-primary text-sm">Add rule</button>
+    <span id="add-status" class="text-xs hidden"></span>
+  </div>
+</div>
+
+{% if rules %}
+<div class="card overflow-hidden">
+  <table class="w-full text-sm" id="rules-table">
+    <thead>
+      <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+        <th class="text-left px-4 py-3">Pattern</th>
+        <th class="text-left px-4 py-3">Category</th>
+        <th class="text-left px-4 py-3">Saved</th>
+        <th class="px-4 py-3 w-20"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for rule in rules %}
+      <tr class="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors"
+          data-rule-id="{{ rule.id }}">
+        <td class="px-4 py-3 font-mono text-slate-200">{{ rule.pattern }}</td>
+        <td class="px-4 py-3 text-slate-300">{{ rule.category }}</td>
+        <td class="px-4 py-3 text-slate-500 text-xs">{{ rule.created_at[:10] }}</td>
+        <td class="px-4 py-3 text-right">
+          <button class="delete-rule-btn text-xs text-red-400 hover:text-red-300 transition-colors"
+                  data-id="{{ rule.id }}">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card p-12 text-center" id="empty-state">
+  <p class="text-slate-400">No rules saved yet.</p>
+  <p class="text-slate-500 text-sm mt-1">
+    Rules are created from the Transactions page when you recategorize a charge,
+    or manually above.
+  </p>
+</div>
+{% endif %}
+
+<div id="rules-table-wrap" class="{% if rules %}hidden{% endif %}"></div>
+
+<script>
+// ── Add rule ─────────────────────────────────────────────────────────────────
+document.getElementById('add-rule-btn').addEventListener('click', async () => {
+  const pattern = document.getElementById('new-pattern').value.trim();
+  const category = document.getElementById('new-category').value;
+  const applyExisting = document.getElementById('new-apply-existing').checked;
+  const status = document.getElementById('add-status');
+
+  if (!pattern) {
+    status.textContent = 'Enter a pattern first.';
+    status.className = 'text-xs text-red-400';
+    status.classList.remove('hidden');
+    return;
+  }
+
+  const res = await fetch('/api/merchant-rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pattern, category, apply_to_existing: applyExisting }),
+  });
+  const data = await res.json();
+
+  if (data.ok) {
+    let msg = `✓ Rule saved`;
+    if (applyExisting && data.updated_count > 0)
+      msg += ` · updated ${data.updated_count} existing transaction${data.updated_count !== 1 ? 's' : ''}`;
+    status.textContent = msg;
+    status.className = 'text-xs text-emerald-400';
+    status.classList.remove('hidden');
+    document.getElementById('new-pattern').value = '';
+    // Reload to show the new row
+    setTimeout(() => location.reload(), 800);
+  } else {
+    status.textContent = '✗ Failed to save rule.';
+    status.className = 'text-xs text-red-400';
+    status.classList.remove('hidden');
+  }
+});
+
+// ── Delete rule ───────────────────────────────────────────────────────────────
+document.querySelectorAll('.delete-rule-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.dataset.id;
+    const row = btn.closest('tr');
+    const res = await fetch(`/api/merchant-rules/${id}`, { method: 'DELETE' });
+    if ((await res.json()).ok) {
+      row.remove();
+    }
+  });
+});
+
+// ── Re-apply all rules ────────────────────────────────────────────────────────
+document.getElementById('reapply-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('reapply-btn');
+  btn.textContent = 'Applying…';
+  btn.disabled = true;
+  const res = await fetch('/api/merchant-rules/reapply', { method: 'POST' });
+  const data = await res.json();
+  btn.textContent = `✓ Updated ${data.updated_count} transaction${data.updated_count !== 1 ? 's' : ''}`;
+  setTimeout(() => {
+    btn.textContent = 'Re-apply all rules to existing transactions';
+    btn.disabled = false;
+  }, 3000);
+});
+</script>
+
+{% endblock %}

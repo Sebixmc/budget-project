@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Budget{% endblock %} — Family Budget</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50:'#f0f9ff', 100:'#e0f2fe', 500:'#0ea5e9', 600:'#0284c7', 700:'#0369a1' },
+            surface: '#0f172a',
+            card: '#1e293b',
+            border: '#334155',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #0f172a; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
+    .btn-primary { background: #0ea5e9; color: #fff; border-radius: 8px; padding: 8px 18px; font-weight: 600; transition: background .15s; }
+    .btn-primary:hover { background: #0284c7; }
+    .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #334155; border-radius: 8px; padding: 8px 16px; transition: all .15s; }
+    .btn-ghost:hover { border-color: #64748b; color: #e2e8f0; }
+    input, select { background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; padding: 8px 12px; }
+    input:focus, select:focus { outline: none; border-color: #0ea5e9; }
+    .flash-success { background: #052e16; border: 1px solid #166534; color: #86efac; }
+    .flash-error   { background: #3b0764; border: 1px solid #7e22ce; color: #e9d5ff; }
+    .flash-warning { background: #422006; border: 1px solid #92400e; color: #fde68a; }
+    .nav-link { color: #94a3b8; padding: 8px 14px; border-radius: 8px; font-weight: 500; transition: all .15s; }
+    .nav-link:hover, .nav-link.active { color: #e2e8f0; background: #1e293b; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- Nav -->
+  <nav class="border-b border-slate-800 px-6 py-3 flex items-center gap-2">
+    <span class="text-lg font-bold text-white mr-6">💰 Family Budget</span>
+    <a href="{{ url_for('dashboard') }}"
+       class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+    <a href="{{ url_for('transactions') }}"
+       class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}">Transactions</a>
+    <a href="{{ url_for('monthly') }}"
+       class="nav-link {% if request.endpoint == 'monthly' %}active{% endif %}">Monthly</a>
+    <a href="{{ url_for('budget') }}"
+       class="nav-link {% if request.endpoint == 'budget' %}active{% endif %}">Budget</a>
+    <a href="{{ url_for('upload') }}"
+       class="nav-link {% if request.endpoint == 'upload' %}active{% endif %}">Upload CSV</a>
+    <a href="{{ url_for('rules') }}"
+       class="nav-link {% if request.endpoint == 'rules' %}active{% endif %}">Rules</a>
+    <a href="{{ url_for('settings') }}"
+       class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}">Settings</a>
+  </nav>
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="max-w-5xl mx-auto px-6 pt-4 space-y-2">
+        {% for cat, msg in messages %}
+          <div class="flash-{{ cat }} rounded-lg px-4 py-3 text-sm">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <main class="max-w-7xl mx-auto px-6 py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

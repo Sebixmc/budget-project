@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+{% block title %}Transactions{% endblock %}
+
+{% block content %}
+
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <h1 class="text-2xl font-bold text-white">Transactions</h1>
+  <span class="text-slate-400 text-sm">{{ transactions|length }} results</span>
+</div>
+
+<!-- Filters -->
+<form method="GET" class="card p-4 mb-4 flex flex-wrap gap-3 items-end">
+  <div>
+    <label class="block text-xs text-slate-400 mb-1">Month</label>
+    <select name="month" class="text-sm">
+      <option value="">All months</option>
+      {% for m in months %}
+        <option value="{{ m }}" {% if filters.month == m %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs text-slate-400 mb-1">Account</label>
+    <select name="account_id" class="text-sm">
+      <option value="">All accounts</option>
+      {% for acct in accounts %}
+        <option value="{{ acct.id }}" {% if filters.account_id == acct.id %}selected{% endif %}>
+          {{ acct.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs text-slate-400 mb-1">Category</label>
+    <select name="category" class="text-sm">
+      <option value="">All categories</option>
+      {% for cat in categories %}
+        <option value="{{ cat }}" {% if filters.category == cat %}selected{% endif %}>{{ cat }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs text-slate-400 mb-1">Type</label>
+    <select name="flow" class="text-sm">
+      <option value="">All</option>
+      <option value="debit"  {% if filters.flow == 'debit'  %}selected{% endif %}>Spending</option>
+      <option value="credit" {% if filters.flow == 'credit' %}selected{% endif %}>Income</option>
+    </select>
+  </div>
+  <div class="flex-1 min-w-40">
+    <label class="block text-xs text-slate-400 mb-1">Search</label>
+    <input type="text" name="search" placeholder="Merchant name…"
+           value="{{ filters.search or '' }}" class="text-sm w-full" />
+  </div>
+  <div class="flex items-center gap-2 self-end pb-1">
+    <input type="checkbox" name="hide_transfers" id="hide_transfers" value="1"
+           {% if filters.hide_transfers %}checked{% endif %}
+           class="accent-sky-500 w-4 h-4 cursor-pointer" />
+    <label for="hide_transfers" class="text-sm text-slate-300 cursor-pointer whitespace-nowrap">Hide transfers</label>
+  </div>
+  <button type="submit" class="btn-primary text-sm">Filter</button>
+  <a href="{{ url_for('transactions') }}" class="btn-ghost text-sm">Clear</a>
+</form>
+
+<!-- Save-as-rule panel (fixed bottom-right, hidden by default) -->
+<div id="rule-panel"
+     class="hidden fixed bottom-6 right-6 z-50 card border-sky-500/40 p-4 w-96 shadow-xl shadow-black/40">
+  <p class="text-xs text-slate-400 mb-1">Save rule for future imports?</p>
+  <p class="text-sm text-slate-200 font-medium mb-3 truncate" id="rule-panel-desc"></p>
+  <div class="flex flex-col gap-2">
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Pattern (edit to generalize)</label>
+      <input type="text" id="rule-panel-pattern" class="text-xs w-full" />
+    </div>
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Category</label>
+      <select id="rule-panel-category" class="text-xs w-full">
+        {% for cat in all_categories %}
+          <option value="{{ cat }}">{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="checkbox" id="rule-panel-apply-existing"
+             class="accent-sky-500 w-4 h-4 cursor-pointer" checked />
+      <label for="rule-panel-apply-existing" class="text-xs text-slate-300 cursor-pointer">
+        Update existing auto-categorized matches
+      </label>
+    </div>
+    <div class="flex items-center gap-2 pt-1">
+      <button id="rule-panel-save" class="btn-primary text-xs">Save rule</button>
+      <button id="rule-panel-dismiss" class="btn-ghost text-xs">Dismiss</button>
+      <span id="rule-panel-status" class="text-xs ml-auto"></span>
+    </div>
+  </div>
+</div>
+
+{% if transactions %}
+
+<!-- Bulk action bar (hidden until rows are checked) -->
+<div id="bulk-bar"
+     class="hidden sticky top-0 z-30 mb-2 card border-sky-500/50 px-4 py-3
+            flex flex-wrap items-center gap-3 shadow-lg shadow-black/30">
+  <span class="text-sky-400 font-semibold text-sm" id="bulk-count"></span>
+  <span class="text-slate-600 text-sm">selected —</span>
+  <select id="bulk-category" class="text-sm flex-shrink-0">
+    {% for cat in all_categories %}
+      <option value="{{ cat }}">{{ cat }}</option>
+    {% endfor %}
+  </select>
+  <button id="bulk-apply" class="btn-primary text-sm">Apply to all selected</button>
+  <button id="bulk-clear" class="btn-ghost text-sm">Clear selection</button>
+  <span id="bulk-status" class="text-xs ml-auto hidden"></span>
+</div>
+
+<div class="card overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+        <th class="px-4 py-3 w-8">
+          <input type="checkbox" id="select-all" class="accent-sky-500 w-4 h-4 cursor-pointer" />
+        </th>
+        <th class="text-left px-4 py-3">Date</th>
+        <th class="text-left px-4 py-3">Description</th>
+        <th class="text-left px-4 py-3">Account</th>
+        <th class="text-left px-4 py-3">Category</th>
+        <th class="text-right px-4 py-3">Amount</th>
+        <th class="text-left px-4 py-3 w-48">Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tx in transactions %}
+      <tr class="tx-row border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors"
+          data-id="{{ tx.id }}">
+        <td class="px-4 py-3">
+          <input type="checkbox" class="row-check accent-sky-500 w-4 h-4 cursor-pointer"
+                 value="{{ tx.id }}" />
+        </td>
+        <td class="px-4 py-3 text-slate-400 whitespace-nowrap">{{ tx.date }}</td>
+        <td class="px-4 py-3 text-slate-200 max-w-xs truncate">{{ tx.description }}</td>
+        <td class="px-4 py-3 text-slate-400 whitespace-nowrap">{{ tx.account_name }}</td>
+        <td class="px-4 py-3">
+          <select class="category-select text-xs bg-slate-800 border border-slate-600
+                         rounded px-2 py-1 text-slateate-300 cursor-pointer"
+                  data-id="{{ tx.id }}">
+            {% for cat in all_categories %}
+              <option value="{{ cat }}" {% if cat == tx.category %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+          </select>
+          {% if tx.category_source == 'manual' %}
+            <span class="manual-badge text-sky-500 text-xs ml-1" title="Manually set">✎</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-right font-medium whitespace-nowrap
+                   {% if tx.flow == 'credit' %}text-emerald-400{% else %}text-red-400{% endif %}">
+          {% if tx.flow == 'credit' %}+{% else %}-{% endif %}${{ "%.2f"|format(tx.amount) }}
+        </td>
+        <td class="px-4 py-3">
+          <input type="text"
+                 class="notes-input text-xs w-full bg-transparent border-b border-transparent
+                        hover:border-slate-600 focus:border-sky-500 text-slate-400
+                        placeholder-slate-600 outline-none transition-colors"
+                 placeholder="Add note…" value="{{ tx.notes or '' }}" data-id="{{ tx.id }}" />
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div class="card p-12 text-center">
+  <p class="text-slate-400">No transactions match your filters.</p>
+</div>
+{% endif %}
+
+<script>
+// ── Checkbox selection ────────────────────────────────────────────────────────
+const bulkBar     = document.getElementById('bulk-bar');
+const bulkCount   = document.getElementById('bulk-count');
+const bulkStatus  = document.getElementById('bulk-status');
+const selectAll   = document.getElementById('select-all');
+const rowChecks   = () => [...document.querySelectorAll('.row-check')];
+const checkedRows = () => rowChecks().filter(c => c.checked);
+
+function updateBulkBar() {
+  const n = checkedRows().length;
+  if (n === 0) {
+    bulkBar.classList.add('hidden');
+    if (selectAll) selectAll.indeterminate = false, selectAll.checked = false;
+  } else {
+    bulkBar.classList.remove('hidden');
+    bulkCount.textContent = n;
+    bulkStatus.classList.add('hidden');
+    const total = rowChecks().length;
+    if (selectAll) {
+      selectAll.checked      = n === total;
+      selectAll.indeterminate = n > 0 && n < total;
+    }
+  }
+}
+
+// Highlight checked rows
+document.querySelectorAll('.row-check').forEach(cb => {
+  cb.addEventListener('change', () => {
+    cb.closest('tr').classList.toggle('bg-sky-900/20', cb.checked);
+    updateBulkBar();
+  });
+});
+
+if (selectAll) {
+  selectAll.addEventListener('change', () => {
+    rowChecks().forEach(cb => {
+      cb.checked = selectAll.checked;
+      cb.closest('tr').classList.toggle('bg-sky-900/20', selectAll.checked);
+    });
+    updateBulkBar();
+  });
+}
+
+document.getElementById('bulk-clear')?.addEventListener('click', () => {
+  rowChecks().forEach(cb => {
+    cb.checked = false;
+    cb.closest('tr').classList.remove('bg-sky-900/20');
+  });
+  updateBulkBar();
+});
+
+// ── Bulk apply ────────────────────────────────────────────────────────────────
+document.getElementById('bulk-apply')?.addEventListener('click', async () => {
+  const ids = checkedRows().map(cb => parseInt(cb.value));
+  const category = document.getElementById('bulk-category').value;
+  if (!ids.length || !category) return;
+
+  const btn = document.getElementById('bulk-apply');
+  btn.textContent = 'Saving…';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/transactions/bulk-category', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, category }),
+    });
+    if (!res.ok) throw new Error();
+
+    // Update every affected row in the DOM without a page reload
+    ids.forEach(id => {
+      const row = document.querySelector(`tr[data-id="${id}"]`);
+      if (!row) return;
+      const sel = row.querySelector('.category-select');
+      if (sel) sel.value = category;
+      // Ensure manual badge is shown
+      const cell = sel?.parentElement;
+      if (cell && !cell.querySelector('.manual-badge')) {
+        const badge = document.createElement('span');
+        badge.className = 'manual-badge text-sky-500 text-xs ml-1';
+        badge.title = 'Manually set';
+        badge.textContent = '✎';
+        cell.appendChild(badge);
+      }
+    });
+
+    bulkStatus.textContent = `✓ Updated ${ids.length} transaction${ids.length !== 1 ? 's' : ''}`;
+    bulkStatus.className = 'text-xs ml-auto text-emerald-400';
+    bulkStatus.classList.remove('hidden');
+  } catch {
+    bulkStatus.textContent = '✗ Save failed — try again';
+    bulkStatus.className = 'text-xs ml-auto text-red-400';
+    bulkStatus.classList.remove('hidden');
+  }
+
+  btn.textContent = 'Apply to all selected';
+  btn.disabled = false;
+});
+
+// ── Save-as-rule panel ────────────────────────────────────────────────────────
+const rulePanel = document.getElementById('rule-panel');
+const rulePanelDesc = document.getElementById('rule-panel-desc');
+const rulePanelPattern = document.getElementById('rule-panel-pattern');
+const rulePanelCategory = document.getElementById('rule-panel-category');
+const rulePanelStatus = document.getElementById('rule-panel-status');
+
+function showRulePanel(description, category) {
+  rulePanelPattern.value = description.toLowerCase();
+  rulePanelCategory.value = category;
+  rulePanelDesc.textContent = `"${description}"`;
+  rulePanelStatus.textContent = '';
+  rulePanelStatus.className = 'text-xs';
+  rulePanel.classList.remove('hidden');
+}
+
+document.getElementById('rule-panel-dismiss').addEventListener('click', () => {
+  rulePanel.classList.add('hidden');
+});
+
+document.getElementById('rule-panel-save').addEventListener('click', async () => {
+  const pattern = rulePanelPattern.value.trim();
+  const category = rulePanelCategory.value;
+  const applyExisting = document.getElementById('rule-panel-apply-existing').checked;
+  if (!pattern) return;
+
+  const res = await fetch('/api/merchant-rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pattern, category, apply_to_existing: applyExisting }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    let msg = '✓ Rule saved';
+    if (applyExisting && data.updated_count > 0)
+      msg += ` · ${data.updated_count} existing transaction${data.updated_count !== 1 ? 's' : ''} updated`;
+    rulePanelStatus.textContent = msg;
+    rulePanelStatus.className = 'text-xs text-emerald-400';
+    setTimeout(() => rulePanel.classList.add('hidden'), 2000);
+  } else {
+    rulePanelStatus.textContent = '✗ Failed';
+    rulePanelStatus.className = 'text-xs text-red-400';
+  }
+});
+
+// ── Individual category edit ──────────────────────────────────────────────────
+document.querySelectorAll('.category-select').forEach(sel => {
+  sel.addEventListener('change', async () => {
+    const row = sel.closest('tr');
+    const description = row.querySelector('td:nth-child(3)')?.textContent?.trim() || '';
+
+    await fetch(`/api/transaction/${sel.dataset.id}/category`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: sel.value }),
+    });
+    const cell = sel.parentElement;
+    if (!cell.querySelector('.manual-badge')) {
+      const badge = document.createElement('span');
+      badge.className = 'manual-badge text-sky-500 text-xs ml-1';
+      badge.title = 'Manually set';
+      badge.textContent = '✎';
+      cell.appendChild(badge);
+    }
+    showRulePanel(description, sel.value);
+  });
+});
+
+// ── Notes edit ────────────────────────────────────────────────────────────────
+document.querySelectorAll('.notes-input').forEach(inp => {
+  const save = () => fetch(`/api/transaction/${inp.dataset.id}/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes: inp.value }),
+  });
+  inp.addEventListener('blur', save);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+});
+</script>
+
+{% endblock %}

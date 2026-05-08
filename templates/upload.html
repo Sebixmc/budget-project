@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Upload CSV{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  <h1 class="text-2xl font-bold text-white">Upload CSV</h1>
+
+  <!-- Upload form -->
+  <div class="card p-6 space-y-5">
+    <p class="text-slate-400 text-sm">
+      Export a CSV from your bank and upload it here. The right parser is chosen automatically
+      based on the account. Duplicates are skipped, so re-uploading the same file is safe.
+    </p>
+
+    <form method="POST" enctype="multipart/form-data" class="space-y-4">
+      <!-- Account picker -->
+      <div>
+        <label class="block text-sm font-medium text-slate-300 mb-1">Account</label>
+        <select name="account_id" required class="w-full">
+          <option value="">— Select account —</option>
+          {% for acct in accounts %}
+            <option value="{{ acct.id }}">
+              {{ acct.name }}
+              ({{ acct.bank_format or acct.type }})
+            </option>
+          {% endfor %}
+        </select>
+        <p class="text-xs text-slate-500 mt-1">
+          Add or change accounts in <a href="{{ url_for('settings') }}" class="text-sky-400 hover:underline">Settings</a>.
+        </p>
+      </div>
+
+      <!-- File picker -->
+      <div>
+        <label class="block text-sm font-medium text-slate-300 mb-1">CSV File</label>
+        <input type="file" name="csv_file" accept=".csv" required
+               class="w-full file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0
+                      file:bg-slate-700 file:text-slate-200 file:font-medium
+                      file:cursor-pointer hover:file:bg-slate-600" />
+      </div>
+
+      <button type="submit" class="btn-primary w-full text-center">Upload & Import</button>
+    </form>
+  </div>
+
+  <!-- Export guides -->
+  <div class="card p-6 space-y-5">
+    <h2 class="font-semibold text-white">How to export your transactions</h2>
+
+    <div>
+      <h3 class="text-sm font-semibold text-sky-400 mb-2">Capital One (Savor Card, Checking, Savings)</h3>
+      <ol class="text-slate-400 text-sm space-y-1 list-decimal list-inside">
+        <li>Log in at <strong class="text-slate-300">capitalone.com</strong></li>
+        <li>Click on the account you want to export</li>
+        <li>Click the <strong class="text-slate-300">Download</strong> icon near the transaction list</li>
+        <li>Select <strong class="text-slate-300">CSV</strong> as the format and choose a date range</li>
+        <li>Save and upload the file above</li>
+      </ol>
+    </div>
+
+    <div>
+      <h3 class="text-sm font-semibold text-sky-400 mb-2">UCCU (Utah Community Credit Union)</h3>
+      <ol class="text-slate-400 text-sm space-y-1 list-decimal list-inside">
+        <li>Log in at <strong class="text-slate-300">uccu.com</strong> → Online Banking</li>
+        <li>Select the account you want to export</li>
+        <li>Click <strong class="text-slate-300">Account History</strong> or the download/export option</li>
+        <li>Choose <strong class="text-slate-300">CSV</strong> format and your date range</li>
+        <li>Save the file (usually named <em class="text-slate-300">AccountHistory.csv</em>) and upload it above</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- Upload history -->
+  {% if upload_history %}
+  <div class="card p-6">
+    <h2 class="font-semibold text-white mb-4">Recent Uploads</h2>
+    <div class="space-y-2">
+      {% for u in upload_history %}
+      <div class="flex items-center justify-between text-sm py-2 border-b border-slate-700 last:border-0">
+        <div>
+          <span class="text-slate-200 font-medium">{{ u.account_name }}</span>
+          <span class="text-slate-500 mx-2">·</span>
+          <span class="text-slate-400">{{ u.filename }}</span>
+        </div>
+        <div class="text-right">
+          <span class="text-emerald-400">+{{ u.rows_imported }}</span>
+          {% if u.rows_skipped %}
+            <span class="text-slate-500 ml-2">{{ u.rows_skipped }} skipped</span>
+          {% endif %}
+          <div class="text-slate-600 text-xs">{{ u.uploaded_at[:16] }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

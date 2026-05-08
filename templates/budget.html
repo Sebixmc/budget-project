@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+{% block title %}Budget{% endblock %}
+
+{% block content %}
+
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Budget</h1>
+    <p class="text-slate-400 text-sm mt-1">
+      Plan your monthly targets. Use historical averages as a guide, then set what you want to spend.
+    </p>
+  </div>
+</div>
+
+<!-- Period selector -->
+<div class="card p-4 mb-6 flex flex-wrap items-center gap-3">
+  <span class="text-xs text-slate-400 uppercase tracking-wide">Historical avg based on:</span>
+  <div class="flex flex-wrap gap-2" id="period-pills">
+    <button class="period-pill active-pill" data-period="all">All time</button>
+    <button class="period-pill" data-period="3mo">Last 3 months</button>
+    <button class="period-pill" data-period="1mo">Last month</button>
+    <span class="text-slate-600 text-xs self-center">or same month:</span>
+    <select id="same-month-picker" class="text-xs py-1 px-2">
+      <option value="">— pick a month —</option>
+      {% for m in months %}
+        <option value="{{ m }}">{{ m }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+<!-- Sankey diagram -->
+<div id="sankey-wrap" class="card p-5 mb-6 {% if not budget_cats %}hidden{% endif %}">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="font-semibold text-white">Income Allocation</h2>
+    <div id="sankey-meta" class="text-xs text-slate-500"></div>
+  </div>
+  <div id="sankey-chart" style="height:300px;width:100%"></div>
+</div>
+
+<!-- Budget table -->
+<div class="card overflow-hidden">
+  <table class="w-full text-sm" id="budget-table">
+    <thead>
+      <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+        <th class="text-left px-4 py-3">Category</th>
+        <th class="text-right px-4 py-3" id="avg-col-header">Avg / month</th>
+        <th class="text-right px-4 py-3">Your Budget</th>
+      </tr>
+    </thead>
+    <tbody id="budget-tbody">
+
+      <!-- ── Monthly Income row (always pinned at top) ─────────────────────── -->
+      <tr class="border-b-2 border-emerald-900/60 bg-emerald-950/20" id="income-row">
+        <td class="px-4 py-3 font-medium text-emerald-300">↑ Monthly Income</td>
+        <td class="px-4 py-3 text-right text-slate-400" id="income-avg-cell" data-raw="{{ avg_income }}">
+          {% if avg_income %}${{ "%.0f"|format(avg_income) }}{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right">
+          <input type="number" min="0" step="1" id="income-input"
+                 class="w-24 text-right text-sm bg-slate-800 border border-slate-600
+                        rounded px-2 py-1 focus:border-emerald-500 outline-none"
+                 placeholder="—"
+                 value="{{ '%.0f'|format(income_estimate) if income_estimate else '' }}" />
+        </td>
+      </tr>
+
+      <!-- ── Explicitly added category rows ────────────────────────────────── -->
+      {% for cat, limit in budget_cats.items() %}
+        {% set flow_type = budget_cat_types.get(cat, 'expense') %}
+        {% set avg       = averages.get(cat, 0) %}
+        <tr class="budget-row border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors"
+            data-category="{{ cat }}" data-flow-type="{{ flow_type }}">
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2">
+              <span class="{{ 'text-emerald-300' if flow_type == 'income' else 'text-slate-200' }}">{{ cat }}</span>
+              <span class="type-badge text-xs px-1.5 py-0.5 rounded-full
+                           {{ 'bg-emerald-900/50 text-emerald-400' if flow_type == 'income' else 'bg-slate-700/50 text-slate-500' }}">
+                {{ flow_type }}
+              </span>
+              <button class="remove-cat-btn ml-auto text-slate-600 hover:text-red-400 transition-colors text-xl leading-none"
+                      data-category="{{ cat }}" title="Remove from budget">×</button>
+            </div>
+          </td>
+          <td class="px-4 py-3 text-right text-slate-400 avg-cell" data-raw="{{ avg }}">
+            {% if avg %}${{ "%.0f"|format(avg) }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right">
+            <input type="number" min="0" step="1"
+                   class="budget-input w-24 text-right text-sm bg-slate-800 border border-slate-600
+                          rounded px-2 py-1 focus:border-sky-500 outline-none"
+                   placeholder="—"
+                   value="{{ '%.0f'|format(limit) if limit else '' }}"
+                   data-category="{{ cat }}" />
+          </td>
+        </tr>
+      {% endfor %}
+
+      <!-- ── Empty state ────────────────────────────────────────────────────── -->
+      <tr id="empty-state-row" class="{{ 'hidden' if budget_cats else '' }}">
+        <td colspan="3" class="px-4 py-10 text-center text-slate-500 text-sm">
+          No budget lines yet — add a category below to get started.
+        </td>
+      </tr>
+
+    </tbody>
+    <tfoot>
+      <tr class="border-t-2 border-slate-600 text-slate-300 font-semibold bg-slate-800/40">
+        <td class="px-4 py-3">Total</td>
+        <td class="px-4 py-3 text-right text-slate-400" id="total-avg">
+          {% set ns = namespace(v=0) %}{% for cat in budget_cats %}{% set ns.v = ns.v + averages.get(cat, 0) %}{% endfor %}
+          {% if ns.v %}${{ "%.0f"|format(ns.v) }}{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right text-sky-400" id="total-budget">
+          {% set total_b = budget_cats.values()|sum %}
+          {% if total_b %}${{ "%.0f"|format(total_b) }}{% else %}—{% endif %}
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+<!-- Add category row -->
+<div class="card p-4 mt-3 flex flex-wrap items-center gap-3">
+  <span class="text-xs text-slate-400 uppercase tracking-wide shrink-0">Add to budget:</span>
+  <select id="add-cat-select" class="text-sm py-1 px-2 min-w-[180px]">
+    <option value="">— select category —</option>
+    {% for cat in available_cats %}
+      <option value="{{ cat }}">{{ cat }}</option>
+    {% endfor %}
+  </select>
+  <div class="flex rounded-lg overflow-hidden border border-slate-600" id="flow-type-toggle">
+    <button class="flow-pill active-flow-expense px-3 py-1.5 text-xs font-medium" data-type="expense">Expense</button>
+    <button class="flow-pill px-3 py-1.5 text-xs font-medium border-l border-slate-600" data-type="income">Income</button>
+  </div>
+  <button id="add-cat-btn" class="btn-primary text-xs py-1.5 px-4">+ Add</button>
+</div>
+
+<p class="text-slate-600 text-xs mt-3 text-center">
+  Budget amounts save automatically when you click away.
+</p>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script>
+const PALETTE = {
+  'Groceries':'#10b981','Dining':'#f59e0b','Gas & Fuel':'#ef4444',
+  'Transportation':'#06b6d4','Rent & Housing':'#8b5cf6','Utilities':'#6366f1',
+  'Subscriptions':'#ec4899','Shopping':'#0ea5e9','Education':'#84cc16',
+  'Entertainment':'#f97316','Health & Medical':'#14b8a6','Fitness':'#a855f7',
+  'Travel':'#eab308','Pet':'#22c55e','Home & Garden':'#3b82f6',
+  'Savings & Investments':'#64748b','Fees & Charges':'#f43f5e','Other':'#475569',
+  'Income':'#22d3ee','Unallocated':'#64748b',
+};
+
+let AVGS = {{ averages|tojson }};
+
+// ── Sankey ────────────────────────────────────────────────────────────────────
+const sankeyWrap = document.getElementById('sankey-wrap');
+const sankeyMeta = document.getElementById('sankey-meta');
+let sankeyChart  = null;
+
+function initSankey() {
+  if (!sankeyChart) {
+    sankeyChart = echarts.init(document.getElementById('sankey-chart'), null, { renderer: 'canvas' });
+    window.addEventListener('resize', () => sankeyChart.resize());
+  }
+}
+
+async function refreshSankey() {
+  const res  = await fetch('/api/budget/sankey');
+  const data = await res.json();
+  if (data.empty || !data.links?.length) { sankeyWrap.classList.add('hidden'); return; }
+  sankeyWrap.classList.remove('hidden');
+  initSankey();
+
+  const nodeNames = [...new Set(data.links.flatMap(l => [l.source, l.target]))];
+  const nodes = nodeNames.map(name => ({ name, itemStyle: { color: PALETTE[name] || '#94a3b8' } }));
+
+  const over = data.over_budget > 0;
+  const incomeLabel = data.income_source === 'estimated' ? 'Estimated income' : 'Avg income';
+  sankeyMeta.textContent = `${incomeLabel} $${data.avg_income.toLocaleString(undefined,{maximumFractionDigits:0})} · Budgeted $${data.total_budgeted.toLocaleString(undefined,{maximumFractionDigits:0})} · ${over ? '⚠️ Over by $'+data.over_budget.toFixed(0) : 'Unallocated $'+data.unallocated.toFixed(0)}`;
+  sankeyMeta.className = 'text-xs ' + (over ? 'text-red-400' : 'text-slate-500');
+
+  sankeyChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      formatter: p => p.data.source
+        ? `${p.data.source} → ${p.data.target}<br/><b>$${Number(p.data.value).toLocaleString(undefined,{maximumFractionDigits:0})}</b>`
+        : `<b>${p.name}</b>`,
+    },
+    series: [{
+      type: 'sankey', data: nodes, links: data.links,
+      emphasis: { focus: 'adjacency' }, nodeAlign: 'left',
+      lineStyle: { color: 'gradient', opacity: 0.4 },
+      label: { color: '#e2e8f0', fontSize: 11 }, itemStyle: { borderWidth: 0 },
+    }],
+  }, true);
+}
+
+refreshSankey();
+
+// ── Period selector ───────────────────────────────────────────────────────────
+let activePeriod = 'all';
+
+document.querySelectorAll('.period-pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.period-pill').forEach(b => b.classList.remove('active-pill'));
+    btn.classList.add('active-pill');
+    document.getElementById('same-month-picker').value = '';
+    activePeriod = btn.dataset.period;
+    loadAverages(activePeriod);
+  });
+});
+document.getElementById('same-month-picker').addEventListener('change', e => {
+  if (!e.target.value) return;
+  document.querySelectorAll('.period-pill').forEach(b => b.classList.remove('active-pill'));
+  activePeriod = e.target.value;
+  loadAverages(activePeriod);
+});
+
+async function loadAverages(period) {
+  const res  = await fetch(`/api/budget/averages?period=${period}`);
+  const data = await res.json();
+  AVGS = data;
+
+  let totalAvg = 0;
+  document.querySelectorAll('.budget-row').forEach(row => {
+    const cat  = row.dataset.category;
+    const avg  = data[cat] || 0;
+    const cell = row.querySelector('.avg-cell');
+    cell.dataset.raw = avg;
+    cell.textContent = avg ? '$' + Math.round(avg).toLocaleString() : '—';
+    totalAvg += avg;
+  });
+  document.getElementById('total-avg').textContent = totalAvg ? '$' + Math.round(totalAvg).toLocaleString() : '—';
+
+  const incomeAvg = data['__income__'] || 0;
+  const cell = document.getElementById('income-avg-cell');
+  cell.dataset.raw = incomeAvg;
+  cell.textContent = incomeAvg ? '$' + Math.round(incomeAvg).toLocaleString() : '—';
+
+  const labels = { all:'Avg / month (all time)', '3mo':'Avg / month (last 3 mo)', '1mo':'Last month' };
+  document.getElementById('avg-col-header').textContent = labels[period] || `Avg (${period.slice(0,3)} avg)`;
+}
+
+// ── Totals footer ─────────────────────────────────────────────────────────────
+function updateTotalsRow() {
+  let totalBudget = 0, totalAvg = 0;
+  document.querySelectorAll('.budget-row').forEach(row => {
+    totalBudget += parseFloat(row.querySelector('.budget-input')?.value) || 0;
+    totalAvg    += parseFloat(row.querySelector('.avg-cell')?.dataset.raw) || 0;
+  });
+  document.getElementById('total-avg').textContent    = totalAvg    ? '$' + Math.round(totalAvg).toLocaleString()    : '—';
+  document.getElementById('total-budget').textContent = totalBudget ? '$' + Math.round(totalBudget).toLocaleString() : '—';
+}
+
+// ── Budget inputs ─────────────────────────────────────────────────────────────
+function attachBudgetInputListeners(inp) {
+  inp.addEventListener('blur', async () => {
+    const cat      = inp.dataset.category;
+    const limit    = parseFloat(inp.value) || 0;
+    const flowType = inp.closest('tr').dataset.flowType;
+
+    await fetch('/api/budget/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: cat, monthly_limit: limit, flow_type: flowType }),
+    });
+
+    updateTotalsRow();
+    refreshSankey();
+  });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+}
+
+document.querySelectorAll('.budget-input').forEach(attachBudgetInputListeners);
+
+// ── Income input ──────────────────────────────────────────────────────────────
+const incomeInput = document.getElementById('income-input');
+incomeInput.addEventListener('blur', async () => {
+  const val = parseFloat(incomeInput.value) || 0;
+  await fetch('/api/budget/income', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ monthly_estimate: val }),
+  });
+  refreshSankey();
+});
+incomeInput.addEventListener('keydown', e => { if (e.key === 'Enter') incomeInput.blur(); });
+
+// ── Add category ──────────────────────────────────────────────────────────────
+let selectedFlowType = 'expense';
+
+document.querySelectorAll('.flow-pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    selectedFlowType = btn.dataset.type;
+    document.querySelectorAll('.flow-pill').forEach(b => b.classList.remove('active-flow-expense', 'active-flow-income'));
+    btn.classList.add(selectedFlowType === 'income' ? 'active-flow-income' : 'active-flow-expense');
+  });
+});
+
+function buildRowHTML(cat, flowType, limit, avg) {
+  const isIncome = flowType === 'income';
+  const catCls   = isIncome ? 'text-emerald-300' : 'text-slate-200';
+  const badgeCls = isIncome ? 'bg-emerald-900/50 text-emerald-400' : 'bg-slate-700/50 text-slate-500';
+  const avgFmt   = avg   ? '$' + Math.round(avg).toLocaleString()   : '—';
+  const limitVal = limit ? Math.round(limit) : '';
+  return `<tr class="budget-row border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors"
+              data-category="${cat}" data-flow-type="${flowType}">
+    <td class="px-4 py-3">
+      <div class="flex items-center gap-2">
+        <span class="${catCls}">${cat}</span>
+        <span class="type-badge text-xs px-1.5 py-0.5 rounded-full ${badgeCls}">${flowType}</span>
+        <button class="remove-cat-btn ml-auto text-slate-600 hover:text-red-400 transition-colors text-xl leading-none"
+                data-category="${cat}" title="Remove from budget">×</button>
+      </div>
+    </td>
+    <td class="px-4 py-3 text-right text-slate-400 avg-cell" data-raw="${avg}">${avgFmt}</td>
+    <td class="px-4 py-3 text-right">
+      <input type="number" min="0" step="1"
+             class="budget-input w-24 text-right text-sm bg-slate-800 border border-slate-600
+                    rounded px-2 py-1 focus:border-sky-500 outline-none"
+             placeholder="—" value="${limitVal}" data-category="${cat}" />
+    </td>
+  </tr>`;
+}
+
+document.getElementById('add-cat-btn').addEventListener('click', async () => {
+  const select   = document.getElementById('add-cat-select');
+  const cat      = select.value;
+  if (!cat) return;
+
+  const flowType = selectedFlowType;
+  const avg      = AVGS[cat] || 0;
+
+  await fetch('/api/budget/categories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: cat, monthly_limit: 0, flow_type: flowType }),
+  });
+
+  document.getElementById('empty-state-row').classList.add('hidden');
+  document.getElementById('empty-state-row').insertAdjacentHTML('beforebegin', buildRowHTML(cat, flowType, 0, avg));
+
+  const newRow = document.querySelector(`#budget-tbody tr[data-category="${CSS.escape(cat)}"]`);
+  attachBudgetInputListeners(newRow.querySelector('.budget-input'));
+
+  select.querySelector(`option[value="${cat}"]`).remove();
+  select.value = '';
+
+  updateTotalsRow();
+  refreshSankey();
+});
+
+// ── Remove category ───────────────────────────────────────────────────────────
+document.getElementById('budget-tbody').addEventListener('click', async e => {
+  const btn = e.target.closest('.remove-cat-btn');
+  if (!btn) return;
+  const cat = btn.dataset.category;
+  btn.closest('tr').remove();
+
+  if (!document.querySelectorAll('.budget-row').length) {
+    document.getElementById('empty-state-row').classList.remove('hidden');
+  }
+
+  const select = document.getElementById('add-cat-select');
+  const opt    = new Option(cat, cat);
+  const after  = [...select.options].find(o => o.value && o.value > cat);
+  after ? select.insertBefore(opt, after) : select.add(opt);
+
+  await fetch(`/api/budget/categories/${encodeURIComponent(cat)}`, { method: 'DELETE' });
+
+  updateTotalsRow();
+  refreshSankey();
+});
+</script>
+
+<style>
+.period-pill {
+  padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 500;
+  color: #94a3b8; background: transparent; border: 1px solid #334155;
+  cursor: pointer; transition: all .15s;
+}
+.period-pill:hover { border-color: #64748b; color: #e2e8f0; }
+.active-pill { background: #0ea5e9; color: #fff; border-color: #0ea5e9; }
+
+.flow-pill { color: #94a3b8; background: transparent; cursor: pointer; transition: all .15s; }
+.flow-pill:hover { color: #e2e8f0; }
+.active-flow-expense { background: #0ea5e9; color: #fff; }
+.active-flow-income  { background: #10b981; color: #fff; }
+</style>
+
+{% endblock %}

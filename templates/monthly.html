@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+{% block title %}Monthly{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Monthly Breakdown</h1>
+    <p class="text-slate-400 text-sm mt-0.5">Spending vs income, category averages, and trends.</p>
+  </div>
+  <form method="GET" class="flex flex-wrap gap-2 items-center">
+    <select name="month" onchange="this.form.submit()" class="text-sm font-medium">
+      {% for m in months %}
+        <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+    <select name="account_id" onchange="this.form.submit()" class="text-sm">
+      <option value="">All accounts</option>
+      {% for acct in accounts %}
+        <option value="{{ acct.id }}" {% if acct.id == selected_account %}selected{% endif %}>
+          {{ acct.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+{% if not selected_month %}
+<div class="card p-12 text-center">
+  <p class="text-slate-400">Upload a CSV first to see monthly data.</p>
+  <a href="{{ url_for('upload') }}" class="btn-primary inline-block mt-4">Upload CSV</a>
+</div>
+{% else %}
+
+<!-- KPI row (filled by JS) -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="kpi-row">
+  <div class="card p-5"><p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Spent This Month</p><p class="text-2xl font-bold text-red-400" id="kpi-spent">—</p></div>
+  <div class="card p-5"><p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Income This Month</p><p class="text-2xl font-bold text-emerald-400" id="kpi-income">—</p></div>
+  <div class="card p-5"><p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Net This Month</p><p class="text-2xl font-bold" id="kpi-net">—</p></div>
+  <div class="card p-5"><p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Monthly Spend</p><p class="text-2xl font-bold text-slate-200" id="kpi-avg">—</p><p class="text-xs text-slate-500 mt-0.5" id="kpi-avg-label"></p></div>
+</div>
+
+<!-- Line chart + Sunburst row -->
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+
+  <!-- Income vs Spending line chart -->
+  <div class="card p-5">
+    <h2 class="font-semibold text-white mb-1">Income vs Spending Over Time</h2>
+    <p class="text-slate-500 text-xs mb-4">Dashed lines = monthly averages. Highlighted bar = selected month.</p>
+    <div style="height:300px"><canvas id="trendChart"></canvas></div>
+  </div>
+
+  <!-- Sunburst for this month -->
+  <div class="card p-5">
+    <h2 class="font-semibold text-white mb-1">This Month's Breakdown</h2>
+    <p class="text-slate-500 text-xs mb-2">Click a slice to zoom in · Click a leaf to fix its category.</p>
+    <div id="sunburst" style="height:300px"></div>
+  </div>
+
+</div>
+
+<!-- Category table -->
+<div class="card p-5">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="font-semibold text-white">Category Breakdown</h2>
+    <span class="text-slate-500 text-xs" id="avg-note"></span>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm" id="cat-table">
+      <thead>
+        <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+          <th class="text-left px-3 py-2">Category</th>
+          <th class="text-right px-3 py-2">This Month</th>
+          <th class="text-right px-3 py-2">All-Month Avg</th>
+          <th class="text-right px-3 py-2 w-32">vs Avg</th>
+          <th class="text-right px-3 py-2" id="cal-avg-header">Same-Month Avg</th>
+          <th class="text-left px-3 py-2 w-48">Spend bar</th>
+        </tr>
+      </thead>
+      <tbody id="cat-tbody">
+        <tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script>
+const MONTH = '{{ selected_month }}';
+const ACCOUNT = '{{ selected_account or "" }}';
+
+const PALETTE = {
+  'Groceries':'#10b981','Dining':'#f59e0b','Gas & Fuel':'#ef4444',
+  'Transportation':'#06b6d4','Rent & Housing':'#8b5cf6','Utilities':'#6366f1',
+  'Subscriptions':'#ec4899','Shopping':'#0ea5e9','Education':'#84cc16',
+  'Entertainment':'#f97316','Health & Medical':'#14b8a6','Fitness':'#a855f7',
+  'Travel':'#eab308','Pet':'#22c55e','Home & Garden':'#3b82f6',
+  'Kids & Family':'#e11d48','Savings & Investments':'#64748b','Other':'#475569',
+  'Spending':'#ef4444','Income':'#10b981',
+};
+function color(name){ return PALETTE[name] || '#94a3b8'; }
+function fmt(n){ return '$' + Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtDelta(n){
+  const s = fmt(n);
+  return n > 0 ? `<span class="text-red-400">+${s}</span>`
+       : n < 0 ? `<span class="text-emerald-400">-${s}</span>`
+               : `<span class="text-slate-500">${s}</span>`;
+}
+
+{% if selected_month %}
+const params = new URLSearchParams({ month: MONTH });
+if (ACCOUNT) params.set('account_id', ACCOUNT);
+
+fetch('/api/monthly?' + params)
+  .then(r => r.json())
+  .then(data => {
+    const s = data.selected;
+    const avgs = data.averages;
+    const sma = data.same_month_avg;
+
+    // ── KPIs ──────────────────────────────────────────────────────────────
+    document.getElementById('kpi-spent').textContent = fmt(s.spent);
+    const netEl = document.getElementById('kpi-net');
+    netEl.textContent = (s.net >= 0 ? '+' : '-') + fmt(s.net);
+    netEl.className = 'text-2xl font-bold ' + (s.net >= 0 ? 'text-emerald-400' : 'text-red-400');
+    document.getElementById('kpi-income').textContent = fmt(s.income);
+    document.getElementById('kpi-avg').textContent = fmt(avgs.spent);
+    document.getElementById('kpi-avg-label').textContent =
+      `over ${avgs.n_months} month${avgs.n_months !== 1 ? 's' : ''}`;
+
+    // ── Trend line chart ───────────────────────────────────────────────────
+    const trend = data.trend;
+    const labels = trend.map(t => t.month);
+    const spentVals  = trend.map(t => t.spent);
+    const incomeVals = trend.map(t => t.income);
+    const avgSpent   = avgs.spent;
+    const avgIncome  = avgs.income;
+
+    const selIdx = labels.indexOf(MONTH);
+
+    new Chart(document.getElementById('trendChart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Spending',
+            data: spentVals,
+            borderColor: '#ef4444',
+            backgroundColor: ctx => {
+              const i = ctx.dataIndex;
+              return i === selIdx ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.06)';
+            },
+            pointBackgroundColor: labels.map((_, i) => i === selIdx ? '#ef4444' : 'rgba(239,68,68,0.5)'),
+            pointRadius: labels.map((_, i) => i === selIdx ? 7 : 4),
+            tension: 0.35, fill: true,
+          },
+          {
+            label: 'Income',
+            data: incomeVals,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16,185,129,0.05)',
+            pointBackgroundColor: labels.map((_, i) => i === selIdx ? '#10b981' : 'rgba(16,185,129,0.5)'),
+            pointRadius: labels.map((_, i) => i === selIdx ? 7 : 4),
+            tension: 0.35, fill: true,
+          },
+          {
+            label: 'Avg Spend',
+            data: labels.map(() => avgSpent),
+            borderColor: 'rgba(239,68,68,0.4)',
+            borderDash: [6,4], pointRadius: 0, fill: false,
+          },
+          {
+            label: 'Avg Income',
+            data: labels.map(() => avgIncome),
+            borderColor: 'rgba(16,185,129,0.4)',
+            borderDash: [6,4], pointRadius: 0, fill: false,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.parsed.y)}` } },
+        },
+        scales: {
+          x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+          y: {
+            ticks: { color: '#64748b', callback: v => '$' + v.toLocaleString() },
+            grid: { color: '#334155' },
+          },
+        },
+      },
+    });
+
+    // ── Sunburst ───────────────────────────────────────────────────────────
+    fetch('/api/sunburst?' + params).then(r => r.json()).then(sunData => {
+      if (!sunData.children || !sunData.children.length) return;
+      function assignColors(node, pc) {
+        node.itemStyle = { color: color(node.name) || pc || '#94a3b8' };
+        (node.children || []).forEach(c => assignColors(c, node.itemStyle.color));
+      }
+      assignColors(sunData, null);
+      const sunChart = echarts.init(document.getElementById('sunburst'), null, { renderer: 'canvas' });
+      sunChart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { formatter: p => `<b>${p.name}</b>${p.value != null ? '<br/>$'+p.value.toFixed(2) : ''}` },
+        series: [{
+          type: 'sunburst',
+          data: sunData.children,
+          radius: ['18%','98%'],
+          sort: undefined,
+          emphasis: { focus: 'ancestor' },
+          label: { rotate: 'radial', color: '#e2e8f0', fontSize: 10, minAngle: 8, overflow: 'truncate', width: 70 },
+          itemStyle: { borderWidth: 2, borderColor: '#1e293b' },
+          levels: [
+            {},
+            { r0:'18%', r:'36%', label: { fontSize:13, fontWeight:'bold', rotate:0 }, itemStyle:{borderWidth:3} },
+            { r0:'36%', r:'66%', label: { fontSize:11, rotate:'radial' } },
+            { r0:'66%', r:'98%', label: { fontSize:9, rotate:'radial', minAngle:5 } },
+          ],
+        }],
+      });
+
+      // Click a leaf → show edit modal
+      sunChart.on('click', p => {
+        const node = p.data;
+        if (!node) return;
+        const isLeaf = !node.children || node.children.length === 0;
+        if (isLeaf && node.tx_id) openEditModal(node);
+      });
+
+      window.addEventListener('resize', () => sunChart.resize());
+    });
+
+    // ── Category table ─────────────────────────────────────────────────────
+    const showCalAvg = sma.n_years > 1;
+    if (!showCalAvg) {
+      document.getElementById('cal-avg-header').textContent = 'Same-Month Avg';
+      document.getElementById('cal-avg-header').classList.add('text-slate-600');
+    } else {
+      document.getElementById('cal-avg-header').textContent =
+        `Same-Month Avg (${sma.n_years}yr)`;
+    }
+
+    document.getElementById('avg-note').textContent =
+      `All-month avg over ${avgs.n_months} months · ` +
+      (showCalAvg
+        ? `Same-month avg over ${sma.n_years} year${sma.n_years>1?'s':''}`
+        : 'Same-month avg needs 2+ years of data');
+
+    const maxSpend = Math.max(...s.by_category.map(c => c.total), 1);
+    const tbody = document.getElementById('cat-tbody');
+    tbody.innerHTML = s.by_category.map(c => {
+      const barPct = Math.min(c.total / maxSpend * 100, 100).toFixed(1);
+      const calCell = showCalAvg && c.cal_avg
+        ? fmt(c.cal_avg)
+        : '<span class="text-slate-600">—</span>';
+      return `
+        <tr class="border-b border-slate-700/40 hover:bg-slate-700/20">
+          <td class="px-3 py-2.5">
+            <span class="inline-block w-2 h-2 rounded-full mr-2" style="background:${color(c.category)}"></span>
+            <span class="text-slate-200">${c.category}</span>
+            <span class="text-slate-600 text-xs ml-1">×${c.count}</span>
+          </td>
+          <td class="px-3 py-2.5 text-right text-slate-200 font-medium">${fmt(c.total)}</td>
+          <td class="px-3 py-2.5 text-right text-slate-400">${fmt(c.avg)}</td>
+          <td class="px-3 py-2.5 text-right">${fmtDelta(c.vs_avg)}</td>
+          <td class="px-3 py-2.5 text-right text-slate-400">${calCell}</td>
+          <td class="px-3 py-2.5">
+            <div class="h-1.5 bg-slate-700 rounded-full">
+              <div class="h-1.5 rounded-full transition-all" style="width:${barPct}%;background:${color(c.category)}"></div>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  });
+{% endif %}
+
+// ── Edit modal ───────────────────────────────────────────────────────────────
+const ALL_CATEGORIES = {{ categories | tojson }};
+
+function openEditModal(node) {
+  document.getElementById('modal-name').textContent = node.name;
+  document.getElementById('modal-date').textContent = node.date || '';
+  const amountEl = document.getElementById('modal-amount');
+  amountEl.textContent = '$' + (node.value || 0).toFixed(2);
+  amountEl.className = 'text-xl font-bold ' + (node.flow === 'credit' ? 'text-emerald-400' : 'text-red-400');
+
+  const sel = document.getElementById('modal-category');
+  sel.innerHTML = ALL_CATEGORIES.map(c =>
+    `<option value="${c}" ${c === node.category ? 'selected' : ''}>${c}</option>`
+  ).join('');
+
+  document.getElementById('modal-status').classList.add('hidden');
+  document.getElementById('modal-save').textContent = 'Save';
+  document.getElementById('modal-save').disabled = false;
+  document.getElementById('modal-save').onclick = () => saveCategory(node.tx_id, sel);
+
+  document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+async function saveCategory(txId, sel) {
+  const btn = document.getElementById('modal-save');
+  const status = document.getElementById('modal-status');
+  btn.textContent = 'Saving…';
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/transaction/${txId}/category`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: sel.value }),
+    });
+    if (!res.ok) throw new Error();
+    status.textContent = '✓ Saved';
+    status.className = 'text-sm text-emerald-400';
+    status.classList.remove('hidden');
+    btn.textContent = 'Saved';
+    setTimeout(() => document.getElementById('edit-modal').classList.add('hidden'), 800);
+  } catch {
+    status.textContent = '✗ Failed — try again';
+    status.className = 'text-sm text-red-400';
+    status.classList.remove('hidden');
+    btn.textContent = 'Save';
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('modal-close').addEventListener('click', () =>
+  document.getElementById('edit-modal').classList.add('hidden'));
+document.getElementById('edit-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+});
+</script>
+
+<!-- Edit modal -->
+<div id="edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+  <div class="card w-full max-w-sm mx-4 p-6 flex flex-col gap-4 relative">
+    <button id="modal-close"
+            class="absolute top-4 right-4 text-slate-500 hover:text-slate-200 text-xl leading-none">&times;</button>
+    <div>
+      <p class="text-slate-500 text-xs uppercase tracking-wide mb-0.5">Transaction</p>
+      <p class="text-white font-semibold text-base leading-snug" id="modal-name"></p>
+      <p class="text-slate-400 text-sm mt-0.5" id="modal-date"></p>
+    </div>
+    <p class="text-xl font-bold" id="modal-amount"></p>
+    <div>
+      <label class="block text-slate-500 text-xs uppercase tracking-wide mb-1">Category</label>
+      <select id="modal-category" class="w-full text-sm"></select>
+    </div>
+    <button id="modal-save" class="btn-primary w-full text-sm">Save</button>
+    <p id="modal-status" class="text-sm text-center hidden"></p>
+  </div>
+</div>
+
+{% endblock %}

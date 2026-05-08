@@ -1,0 +1,664 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- Header + filters -->
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <h1 class="text-2xl font-bold text-white">Dashboard</h1>
+
+  <form method="GET" class="flex flex-wrap gap-2 items-center">
+    <select name="month" onchange="this.form.submit()" class="text-sm">
+      <option value="">All time</option>
+      {% for m in months %}
+        <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="account_id" onchange="this.form.submit()" class="text-sm">
+      <option value="">All accounts</option>
+      {% for acct in accounts %}
+        <option value="{{ acct.id }}" {% if acct.id == selected_account %}selected{% endif %}>
+          {{ acct.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+{% if insights.tx_count == 0 %}
+  <!-- Empty state -->
+  <div class="card p-12 text-center space-y-3">
+    <p class="text-4xl">📂</p>
+    <p class="text-slate-300 font-semibold text-lg">No transactions yet</p>
+    <p class="text-slate-500 text-sm">Upload a Capital One CSV to get started.</p>
+    <a href="{{ url_for('upload') }}" class="btn-primary inline-block mt-2">Upload CSV</a>
+  </div>
+
+{% else %}
+
+  <!-- KPI cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="card p-5">
+      <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Total Spent</p>
+      <p class="text-2xl font-bold text-red-400">${{ "%.2f"|format(insights.total_spent) }}</p>
+    </div>
+    <div class="card p-5">
+      <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Total Income</p>
+      <p class="text-2xl font-bold text-emerald-400">${{ "%.2f"|format(insights.total_income) }}</p>
+    </div>
+    <div class="card p-5">
+      <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Net</p>
+      <p class="text-2xl font-bold {% if insights.net >= 0 %}text-emerald-400{% else %}text-red-400{% endif %}">
+        {% if insights.net >= 0 %}+{% endif %}${{ "%.2f"|format(insights.net) }}
+      </p>
+    </div>
+    <div class="card p-5">
+      <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Transactions</p>
+      <p class="text-2xl font-bold text-slate-200">{{ insights.tx_count }}</p>
+    </div>
+  </div>
+
+  <!-- Charts grid — switches from 2-col to 3-col when sunburst is expanded -->
+  <div id="main-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+    <!-- Sunburst card -->
+    <div id="sunburst-card" class="card p-5 transition-all">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-semibold text-white">Spending & Income Breakdown</h2>
+        <button id="collapse-btn"
+                class="hidden text-xs text-slate-400 hover:text-slate-200 border border-slate-600
+                       hover:border-slate-400 rounded-lg px-3 py-1.5 transition-colors">
+          ↙ Collapse
+        </button>
+      </div>
+      <p class="text-slate-500 text-xs mb-3">Click any segment to explore · click again to collapse</p>
+      <div id="sunburst" style="height:320px;width:100%;transition:height .35s ease"></div>
+    </div>
+
+    <!-- Detail panel — hidden until sunburst is expanded -->
+    <div id="detail-panel" class="hidden card p-5 flex flex-col gap-4">
+
+      <div id="panel-empty">
+        <h2 class="font-semibold text-white text-lg mb-1">Select a segment</h2>
+        <p class="text-slate-400 text-sm">Click any colored section to explore. Click an outer leaf to edit its category.</p>
+      </div>
+
+      <div id="panel-branch" class="hidden flex flex-col gap-3">
+        <div class="flex items-start justify-between">
+          <div>
+            <h2 class="font-semibold text-white text-lg" id="branch-title"></h2>
+            <p class="text-slate-500 text-xs" id="branch-count"></p>
+          </div>
+          <p class="text-2xl font-bold text-white" id="branch-amount"></p>
+        </div>
+        <div id="branch-list" class="space-y-1 max-h-96 overflow-y-auto pr-1"></div>
+      </div>
+
+      <div id="panel-leaf" class="hidden flex flex-col gap-4">
+        <div>
+          <p class="text-slate-500 text-xs uppercase tracking-wide mb-0.5">Transaction</p>
+          <h2 class="font-semibold text-white text-base leading-snug" id="leaf-name"></h2>
+          <p class="text-slate-400 text-sm mt-0.5" id="leaf-date"></p>
+        </div>
+        <div>
+          <p class="text-slate-500 text-xs uppercase tracking-wide mb-0.5">Amount</p>
+          <p class="text-2xl font-bold" id="leaf-amount"></p>
+        </div>
+        <div>
+          <p class="text-slate-500 text-xs uppercase tracking-wide mb-1">Category</p>
+          <select id="leaf-category" class="w-full text-sm">
+            {% for cat in all_categories %}
+              <option value="{{ cat }}">{{ cat }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button id="leaf-save" class="btn-primary w-full text-center text-sm">Save Category</button>
+        <p id="leaf-status" class="text-xs text-center hidden"></p>
+      </div>
+
+    </div>
+
+    <!-- Monthly bar — becomes full-width row when sunburst expands -->
+    <div id="monthly-card" class="card p-5">
+      <h2 class="font-semibold text-white mb-1">Monthly Spending</h2>
+      <p class="text-slate-500 text-xs mb-3">Click a bar to open that month in detail</p>
+      <div class="relative" style="height:260px">
+        <canvas id="monthlyChart"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom row: top merchants + category table -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Top merchants -->
+    <div class="card p-5">
+      <h2 class="font-semibold text-white mb-4">Top Merchants</h2>
+      <div class="space-y-2">
+        {% set max_merchant = insights.top_merchants[0].total if insights.top_merchants else 1 %}
+        {% for m in insights.top_merchants %}
+        <div>
+          <div class="flex justify-between text-sm mb-1">
+            <span class="text-slate-300 truncate max-w-[60%]">{{ m.description }}</span>
+            <span class="text-slate-400">
+              ${{ "%.2f"|format(m.total) }}
+              <span class="text-slate-600 text-xs ml-1">×{{ m.count }}</span>
+            </span>
+          </div>
+          <div class="h-1.5 bg-slate-700 rounded-full">
+            <div class="h-1.5 bg-sky-500 rounded-full"
+                 style="width: {{ [(m.total / max_merchant * 100), 100]|min }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Category breakdown table -->
+    <div class="card p-5">
+      <h2 class="font-semibold text-white mb-4">Category Breakdown</h2>
+      <div class="space-y-1 max-h-80 overflow-y-auto pr-1">
+        {% for c in insights.by_category %}
+        <div class="flex justify-between items-center py-1.5 border-b border-slate-700/50 last:border-0">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full" style="background: {{ loop.index | category_color }}"></span>
+            <span class="text-slate-300 text-sm">{{ c.category }}</span>
+          </div>
+          <div class="text-right">
+            <span class="text-slate-200 text-sm font-medium">${{ "%.2f"|format(c.total) }}</span>
+            {% if insights.total_spent > 0 %}
+            <span class="text-slate-500 text-xs ml-2">
+              {{ "%.0f"|format(c.total / insights.total_spent * 100) }}%
+            </span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Goals + Rainy Day row -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+
+    <!-- Goals -->
+    <div class="card p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-semibold text-white">Goals</h2>
+        <button id="show-add-goal" class="btn-ghost text-xs">+ Add Goal</button>
+      </div>
+
+      <!-- Add goal form (hidden) -->
+      <div id="add-goal-form" class="hidden mb-4 p-3 bg-slate-800/60 rounded-lg space-y-2">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-slate-400">Goal name</label>
+            <input id="goal-name" type="text" placeholder="e.g. Vacation" class="text-sm w-full mt-0.5" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400">Target amount</label>
+            <input id="goal-target" type="number" placeholder="2000" min="1" class="text-sm w-full mt-0.5" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400">Target date (optional)</label>
+            <input id="goal-date" type="date" class="text-sm w-full mt-0.5" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400">Color</label>
+            <input id="goal-color" type="color" value="#0ea5e9" class="h-9 w-full mt-0.5 rounded cursor-pointer bg-slate-800 border border-slate-600" />
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button id="save-goal-btn" class="btn-primary text-xs">Save Goal</button>
+          <button id="cancel-goal-btn" class="btn-ghost text-xs">Cancel</button>
+          <span id="goal-status" class="text-xs self-center hidden"></span>
+        </div>
+      </div>
+
+      <!-- Goal cards -->
+      <div id="goals-list" class="space-y-3">
+        {% for goal in goals %}
+        <div class="goal-card group relative" data-id="{{ goal.id }}">
+          <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:{{ goal.color }}"></span>
+              <span class="text-slate-200 text-sm font-medium">{{ goal.name }}</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-slate-400 text-xs">${{ "%.0f"|format(goal.current_amount) }} / ${{ "%.0f"|format(goal.target_amount) }}</span>
+              <button class="edit-goal-btn text-xs text-slate-600 hover:text-sky-400 transition-colors" data-id="{{ goal.id }}" data-name="{{ goal.name }}" data-target="{{ goal.target_amount }}" data-current="{{ goal.current_amount }}" data-color="{{ goal.color }}" data-date="{{ goal.target_date or '' }}">✎</button>
+              <button class="delete-goal-btn text-xs text-slate-600 hover:text-red-400 transition-colors" data-id="{{ goal.id }}">✕</button>
+            </div>
+          </div>
+          <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+            {% set pct = [(goal.current_amount / goal.target_amount * 100), 100]|min if goal.target_amount > 0 else 0 %}
+            <div class="h-2 rounded-full transition-all" style="width:{{ pct }}%;background:{{ goal.color }}"></div>
+          </div>
+          <div class="flex justify-between mt-0.5">
+            <span class="text-xs text-slate-500">{{ "%.0f"|format(pct) }}% complete</span>
+            {% if goal.target_date %}
+            <span class="text-xs text-slate-500">{{ goal.target_date }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% else %}
+        <p class="text-slate-500 text-sm text-center py-4">No goals yet — add one above.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Rainy Day Fund -->
+    <div class="card p-5">
+      <h2 class="font-semibold text-white mb-4">☂️ Rainy Day Fund</h2>
+      {% if rainy_day.balance is not none %}
+        <p class="text-4xl font-bold text-emerald-400 mb-1">${{ "%.2f"|format(rainy_day.balance) }}</p>
+        <p class="text-xs text-slate-500 mb-4">Last updated {{ rainy_day.last_updated }}</p>
+      {% else %}
+        <p class="text-3xl font-bold text-slate-500 mb-1">—</p>
+        <p class="text-xs text-slate-500 mb-4">No balance recorded yet</p>
+      {% endif %}
+
+      <!-- Update form -->
+      <div id="rainy-form" class="hidden mb-4 p-3 bg-slate-800/60 rounded-lg space-y-2">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-slate-400">New balance</label>
+            <input id="rainy-balance" type="number" step="0.01" placeholder="0.00" class="text-sm w-full mt-0.5" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400">Note (optional)</label>
+            <input id="rainy-note" type="text" placeholder="Added $200 paycheck" class="text-sm w-full mt-0.5" />
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button id="save-rainy-btn" class="btn-primary text-xs">Update Balance</button>
+          <button id="cancel-rainy-btn" class="btn-ghost text-xs">Cancel</button>
+          <span id="rainy-status" class="text-xs self-center hidden"></span>
+        </div>
+      </div>
+
+      <button id="show-rainy-form" class="btn-ghost text-xs mb-4">Update Balance</button>
+
+      <!-- Recent log -->
+      {% if rainy_day.log %}
+      <div class="space-y-1 border-t border-slate-700 pt-3">
+        <p class="text-xs text-slate-500 uppercase tracking-wide mb-2">History</p>
+        {% for entry in rainy_day.log %}
+        <div class="flex justify-between text-xs py-0.5">
+          <span class="text-slate-400">{{ entry.recorded_at[:10] }}{% if entry.note %} — {{ entry.note }}{% endif %}</span>
+          <span class="text-slate-300 font-medium">${{ "%.2f"|format(entry.balance) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+{% endif %}
+
+<!-- Goal edit modal -->
+<div id="goal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+  <div class="card p-6 w-96 space-y-3">
+    <h3 class="font-semibold text-white">Edit Goal</h3>
+    <input type="hidden" id="modal-goal-id" />
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="text-xs text-slate-400">Goal name</label>
+        <input id="modal-goal-name" type="text" class="text-sm w-full mt-0.5" />
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Target amount</label>
+        <input id="modal-goal-target" type="number" class="text-sm w-full mt-0.5" />
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Saved so far</label>
+        <input id="modal-goal-current" type="number" class="text-sm w-full mt-0.5" />
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Target date</label>
+        <input id="modal-goal-date" type="date" class="text-sm w-full mt-0.5" />
+      </div>
+      <div class="col-span-2">
+        <label class="text-xs text-slate-400">Color</label>
+        <input id="modal-goal-color" type="color" class="h-9 w-full mt-0.5 rounded cursor-pointer bg-slate-800 border border-slate-600" />
+      </div>
+    </div>
+    <div class="flex gap-2 pt-1">
+      <button id="modal-save-btn" class="btn-primary text-sm">Save</button>
+      <button id="modal-cancel-btn" class="btn-ghost text-sm">Cancel</button>
+      <span id="modal-status" class="text-xs self-center hidden"></span>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script>
+{% if insights.tx_count > 0 %}
+
+// ── Layout elements ───────────────────────────────────────────────────────────
+const mainGrid    = document.getElementById('main-grid');
+const sunburstCard  = document.getElementById('sunburst-card');
+const detailPanel = document.getElementById('detail-panel');
+const monthlyCard = document.getElementById('monthly-card');
+const collapseBtn = document.getElementById('collapse-btn');
+const sunburstEl  = document.getElementById('sunburst');
+let isExpanded = false;
+
+function expandSunburst() {
+  if (isExpanded) return;
+  isExpanded = true;
+  // Switch to 3-col grid
+  mainGrid.classList.remove('lg:grid-cols-2');
+  mainGrid.classList.add('lg:grid-cols-3');
+  // Sunburst takes 2 cols, panel takes 1 col
+  sunburstCard.classList.add('lg:col-span-2');
+  // Monthly bar spans all 3 cols (own full-width row)
+  monthlyCard.classList.add('lg:col-span-3');
+  // Show panel and collapse button
+  detailPanel.classList.remove('hidden');
+  collapseBtn.classList.remove('hidden');
+  // Grow the chart
+  sunburstEl.style.height = '520px';
+  setTimeout(() => sunburstChart.resize(), 50);
+}
+
+function collapseSunburst() {
+  isExpanded = false;
+  mainGrid.classList.add('lg:grid-cols-2');
+  mainGrid.classList.remove('lg:grid-cols-3');
+  sunburstCard.classList.remove('lg:col-span-2');
+  monthlyCard.classList.remove('lg:col-span-3');
+  detailPanel.classList.add('hidden');
+  collapseBtn.classList.add('hidden');
+  sunburstEl.style.height = '320px';
+  setTimeout(() => sunburstChart.resize(), 50);
+}
+
+collapseBtn.addEventListener('click', collapseSunburst);
+
+// ── Panel helpers ─────────────────────────────────────────────────────────────
+function showPanelEmpty() {
+  document.getElementById('panel-empty').classList.remove('hidden');
+  document.getElementById('panel-branch').classList.add('hidden');
+  document.getElementById('panel-leaf').classList.add('hidden');
+}
+function showPanelBranch(node) {
+  document.getElementById('panel-empty').classList.add('hidden');
+  document.getElementById('panel-leaf').classList.add('hidden');
+  document.getElementById('panel-branch').classList.remove('hidden');
+  document.getElementById('branch-title').textContent = node.name;
+  document.getElementById('branch-amount').textContent = '$' + (node.value||0).toFixed(2);
+  const children = node.children || [];
+  document.getElementById('branch-count').textContent =
+    children.length + ' item' + (children.length !== 1 ? 's' : '');
+  document.getElementById('branch-list').innerHTML = children.map(ch => `
+    <div class="flex justify-between items-center py-1.5 border-b border-slate-700/40 last:border-0 text-sm">
+      <span class="text-slate-300 truncate max-w-[65%]">${ch.name}</span>
+      <span class="text-slate-200 font-medium ml-2">$${(ch.value||0).toFixed(2)}</span>
+    </div>`).join('');
+}
+
+let activeTxId = null;
+function showPanelLeaf(node) {
+  document.getElementById('panel-empty').classList.add('hidden');
+  document.getElementById('panel-branch').classList.add('hidden');
+  document.getElementById('panel-leaf').classList.remove('hidden');
+  activeTxId = node.tx_id;
+  document.getElementById('leaf-name').textContent = node.name;
+  document.getElementById('leaf-date').textContent = node.date || '';
+  const amountEl = document.getElementById('leaf-amount');
+  amountEl.textContent = '$' + (node.value||0).toFixed(2);
+  amountEl.className = 'text-2xl font-bold ' + (node.flow === 'credit' ? 'text-emerald-400' : 'text-red-400');
+  document.getElementById('leaf-category').value = node.category || '';
+  const status = document.getElementById('leaf-status');
+  status.classList.add('hidden');
+  status.textContent = '';
+}
+
+document.getElementById('leaf-save').addEventListener('click', async () => {
+  if (!activeTxId) return;
+  const category = document.getElementById('leaf-category').value;
+  const status   = document.getElementById('leaf-status');
+  const btn      = document.getElementById('leaf-save');
+  btn.textContent = 'Saving…'; btn.disabled = true;
+  try {
+    const res = await fetch(`/api/transaction/${activeTxId}/category`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category }),
+    });
+    if (!res.ok) throw new Error();
+    status.textContent = '✓ Saved';
+    status.className = 'text-xs text-center text-emerald-400';
+  } catch {
+    status.textContent = '✗ Save failed';
+    status.className = 'text-xs text-center text-red-400';
+  }
+  status.classList.remove('hidden');
+  btn.textContent = 'Save Category'; btn.disabled = false;
+});
+
+// ── Sunburst chart ────────────────────────────────────────────────────────────
+const SUNBURST_PALETTE = {
+  'Groceries':'#10b981','Dining':'#f59e0b','Gas & Fuel':'#ef4444',
+  'Transportation':'#06b6d4','Rent & Housing':'#8b5cf6','Utilities':'#6366f1',
+  'Subscriptions':'#ec4899','Shopping':'#0ea5e9','Education':'#84cc16',
+  'Entertainment':'#f97316','Health & Medical':'#14b8a6','Fitness':'#a855f7',
+  'Travel':'#eab308','Pet':'#22c55e','Home & Garden':'#3b82f6',
+  'Savings & Investments':'#64748b','Fees & Charges':'#f43f5e','Other':'#475569',
+  'Spending':'#ef4444','Income':'#10b981',
+};
+function colorFor(n) { return SUNBURST_PALETTE[n] || null; }
+function assignColors(node, parentColor) {
+  const c = colorFor(node.name) || parentColor || '#94a3b8';
+  node.itemStyle = { color: c };
+  (node.children || []).forEach(ch => assignColors(ch, c));
+}
+
+const sunburstChart = echarts.init(sunburstEl, null, { renderer: 'canvas' });
+
+const sunburstParams = new URLSearchParams({
+  {% if selected_month %}month: '{{ selected_month }}',{% endif %}
+  {% if selected_account %}account_id: '{{ selected_account }}',{% endif %}
+});
+
+fetch('/api/sunburst?' + sunburstParams)
+  .then(r => r.json())
+  .then(data => {
+    if (!data.children || !data.children.length) return;
+    assignColors(data, null);
+    sunburstChart.setOption({
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'item',
+        formatter: p => `<b>${p.name}</b>${p.value != null ? '<br/>$' + Number(p.value).toFixed(2) : ''}`,
+      },
+      series: [{
+        type: 'sunburst',
+        data: data.children,
+        radius: ['10%', '95%'],
+        sort: undefined,
+        emphasis: { focus: 'ancestor' },
+        label: {
+          rotate: 'radial', color: '#e2e8f0', fontSize: 10,
+          minAngle: 8, overflow: 'truncate', width: 70,
+        },
+        itemStyle: { borderWidth: 2, borderColor: '#0f172a' },
+        levels: [
+          {},
+          { r0:'10%', r:'35%', label:{ fontSize:13, fontWeight:'bold', rotate:0 }, itemStyle:{ borderWidth:3 } },
+          { r0:'35%', r:'65%', label:{ fontSize:11, rotate:'radial' }, itemStyle:{ borderWidth:2 } },
+          { r0:'65%', r:'95%', label:{ fontSize:9,  rotate:'radial', minAngle:6 }, itemStyle:{ borderWidth:1 } },
+        ],
+      }],
+    });
+
+    sunburstChart.on('click', p => {
+      const node = p.data;
+      if (!node) return;
+      // First click on chart expands it
+      expandSunburst();
+      const isLeaf = !node.children || node.children.length === 0;
+      if (isLeaf && node.tx_id) {
+        showPanelLeaf(node);
+      } else {
+        showPanelBranch(node);
+      }
+    });
+
+    window.addEventListener('resize', () => sunburstChart.resize());
+  });
+
+// ── Monthly bar (click → /monthly?month=...) ─────────────────────────────────
+const monthData = {{ insights.monthly_totals | tojson }};
+monthData.reverse();
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'bar',
+  data: {
+    labels: monthData.map(d => d.month),
+    datasets: [{
+      label: 'Spent',
+      data: monthData.map(d => d.total),
+      backgroundColor: monthData.map(d => d.month === '{{ selected_month }}' ? '#38bdf8' : '#0ea5e9'),
+      borderRadius: 6,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    onClick: (event, elements) => {
+      if (!elements.length) return;
+      const month = monthData[elements[0].index].month;
+      const p = new URLSearchParams({ month });
+      {% if selected_account %}p.set('account_id', '{{ selected_account }}');{% endif %}
+      window.location.href = '/monthly?' + p;
+    },
+    onHover: (event, elements) => {
+      event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: ctx => ` $${ctx.parsed.y.toFixed(2)}`,
+          footer: () => 'Click to view in Monthly tab',
+        },
+        footerColor: '#64748b',
+        footerFont: { size: 10 },
+      }
+    },
+    scales: {
+      x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+      y: {
+        ticks: { color: '#64748b', callback: v => '$' + v.toLocaleString() },
+        grid: { color: '#334155' }
+      }
+    }
+  }
+});
+
+{% endif %}
+
+// ── Goals ─────────────────────────────────────────────────────────────────────
+const showAddGoalBtn  = document.getElementById('show-add-goal');
+const addGoalForm     = document.getElementById('add-goal-form');
+const cancelGoalBtn   = document.getElementById('cancel-goal-btn');
+const saveGoalBtn     = document.getElementById('save-goal-btn');
+const goalStatus      = document.getElementById('goal-status');
+
+showAddGoalBtn?.addEventListener('click', () => addGoalForm.classList.toggle('hidden'));
+cancelGoalBtn?.addEventListener('click', () => addGoalForm.classList.add('hidden'));
+
+saveGoalBtn?.addEventListener('click', async () => {
+  const name   = document.getElementById('goal-name').value.trim();
+  const target = parseFloat(document.getElementById('goal-target').value);
+  const date   = document.getElementById('goal-date').value || null;
+  const color  = document.getElementById('goal-color').value;
+  if (!name || !target) {
+    goalStatus.textContent = 'Name and target required.';
+    goalStatus.className = 'text-xs self-center text-red-400';
+    goalStatus.classList.remove('hidden');
+    return;
+  }
+  const res = await fetch('/api/goals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, target_amount: target, color, target_date: date }),
+  });
+  if ((await res.json()).ok) location.reload();
+});
+
+// Goal edit modal
+const goalModal = document.getElementById('goal-modal');
+document.getElementById('modal-cancel-btn')?.addEventListener('click', () => goalModal.classList.add('hidden'));
+
+document.querySelectorAll('.edit-goal-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('modal-goal-id').value      = btn.dataset.id;
+    document.getElementById('modal-goal-name').value    = btn.dataset.name;
+    document.getElementById('modal-goal-target').value  = btn.dataset.target;
+    document.getElementById('modal-goal-current').value = btn.dataset.current;
+    document.getElementById('modal-goal-color').value   = btn.dataset.color;
+    document.getElementById('modal-goal-date').value    = btn.dataset.date;
+    document.getElementById('modal-status').classList.add('hidden');
+    goalModal.classList.remove('hidden');
+  });
+});
+
+document.getElementById('modal-save-btn')?.addEventListener('click', async () => {
+  const id = document.getElementById('modal-goal-id').value;
+  const payload = {
+    name:           document.getElementById('modal-goal-name').value.trim(),
+    target_amount:  parseFloat(document.getElementById('modal-goal-target').value),
+    current_amount: parseFloat(document.getElementById('modal-goal-current').value) || 0,
+    color:          document.getElementById('modal-goal-color').value,
+    target_date:    document.getElementById('modal-goal-date').value || null,
+  };
+  const res = await fetch(`/api/goals/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if ((await res.json()).ok) location.reload();
+});
+
+document.querySelectorAll('.delete-goal-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('Delete this goal?')) return;
+    await fetch(`/api/goals/${btn.dataset.id}`, { method: 'DELETE' });
+    btn.closest('.goal-card').remove();
+  });
+});
+
+// ── Rainy Day ─────────────────────────────────────────────────────────────────
+document.getElementById('show-rainy-form')?.addEventListener('click', () => {
+  document.getElementById('rainy-form').classList.toggle('hidden');
+});
+document.getElementById('cancel-rainy-btn')?.addEventListener('click', () => {
+  document.getElementById('rainy-form').classList.add('hidden');
+});
+document.getElementById('save-rainy-btn')?.addEventListener('click', async () => {
+  const balance = parseFloat(document.getElementById('rainy-balance').value);
+  const note    = document.getElementById('rainy-note').value.trim();
+  const status  = document.getElementById('rainy-status');
+  if (isNaN(balance)) {
+    status.textContent = 'Enter a valid balance.';
+    status.className = 'text-xs self-center text-red-400';
+    status.classList.remove('hidden');
+    return;
+  }
+  const res = await fetch('/api/rainy-day', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ balance, note }),
+  });
+  if ((await res.json()).ok) location.reload();
+});
+</script>
+
+{% endblock %}
