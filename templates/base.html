@@ -29,6 +29,19 @@
     .btn-ghost:hover { border-color: #64748b; color: #e2e8f0; }
     input, select { background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; padding: 8px 12px; }
     input:focus, select:focus { outline: none; border-color: #0ea5e9; }
+    /* Flat matte selects (avoids glossy native styling on macOS/WebKit) */
+    select.select-matte {
+      -webkit-appearance: none;
+      appearance: none;
+      background-color: #334155;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.65rem center;
+      background-size: 1rem;
+      padding-right: 2.25rem;
+      box-shadow: none;
+    }
+    select.select-matte:focus { background-color: #334155; }
     .flash-success { background: #052e16; border: 1px solid #166534; color: #86efac; }
     .flash-error   { background: #3b0764; border: 1px solid #7e22ce; color: #e9d5ff; }
     .flash-warning { background: #422006; border: 1px solid #92400e; color: #fde68a; }

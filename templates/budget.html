@@ -50,18 +50,52 @@
     </thead>
     <tbody id="budget-tbody">
 
-      <!-- ── Monthly Income row (always pinned at top) ─────────────────────── -->
-      <tr class="border-b-2 border-emerald-900/60 bg-emerald-950/20" id="income-row">
-        <td class="px-4 py-3 font-medium text-emerald-300">↑ Monthly Income</td>
-        <td class="px-4 py-3 text-right text-slate-400" id="income-avg-cell" data-raw="{{ avg_income }}">
+      <!-- ── Income sources (each branch merges in the Sankey, then splits out) ─ -->
+      <tr class="border-b border-slate-700/80 bg-slate-800/25">
+        <td colspan="3" class="px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">
+          Income sources
+          <span class="normal-case text-slate-600 font-normal"> — each line feeds the chart, merges into “Total income”, then flows to your expense budgets</span>
+        </td>
+      </tr>
+      <tr class="border-b border-emerald-900/40 bg-emerald-950/15 text-sm">
+        <td class="px-4 py-2 text-emerald-200/90">Avg credits / month (reference)</td>
+        <td class="px-4 py-2 text-right text-slate-400" id="income-avg-cell" data-raw="{{ avg_income }}">
           {% if avg_income %}${{ "%.0f"|format(avg_income) }}{% else %}—{% endif %}
         </td>
+        <td class="px-4 py-2 text-right text-slate-600 text-xs">From transactions</td>
+      </tr>
+      {% for src in income_sources %}
+      <tr class="income-src-row border-b border-slate-700/50 hover:bg-slate-700/15 transition-colors"
+          data-source-id="{{ src.id }}">
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-2">
+            <input type="text" value="{{ src.name }}"
+                   class="income-src-name flex-1 min-w-0 text-sm bg-slate-800 border border-slate-600
+                          rounded px-2 py-1.5 focus:border-emerald-500 outline-none text-emerald-100" />
+            <button type="button" class="remove-src-btn text-slate-600 hover:text-red-400 text-xl leading-none"
+                    title="Remove">×</button>
+          </div>
+        </td>
+        <td class="px-4 py-3 text-right text-slate-600 text-sm">—</td>
         <td class="px-4 py-3 text-right">
-          <input type="number" min="0" step="1" id="income-input"
-                 class="w-24 text-right text-sm bg-slate-800 border border-slate-600
+          <input type="number" min="0" step="1" value="{{ '%.0f'|format(src.monthly_amount) if src.monthly_amount else '' }}"
+                 class="income-src-amt w-24 text-right text-sm bg-slate-800 border border-slate-600
                         rounded px-2 py-1 focus:border-emerald-500 outline-none"
-                 placeholder="—"
-                 value="{{ '%.0f'|format(income_estimate) if income_estimate else '' }}" />
+                 placeholder="0" />
+        </td>
+      </tr>
+      {% endfor %}
+      <tr id="income-src-empty-hint" class="{{ 'hidden' if income_sources else '' }}">
+        <td colspan="3" class="px-4 py-3 text-slate-500 text-sm italic">
+          No income lines yet — add your paychecks, bonuses, side income, etc. (They appear as separate branches in the Sankey.)
+        </td>
+      </tr>
+      <tr class="border-b-2 border-slate-700">
+        <td colspan="3" class="px-4 py-2">
+          <button type="button" id="add-income-src-btn"
+                  class="text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors">
+            + Add income source
+          </button>
         </td>
       </tr>
 
@@ -173,29 +207,49 @@ async function refreshSankey() {
   sankeyWrap.classList.remove('hidden');
   initSankey();
 
-  const nodeNames = [...new Set(data.links.flatMap(l => [l.source, l.target]))];
-  const nodes = nodeNames.map(name => ({ name, itemStyle: { color: PALETTE[name] || '#94a3b8' } }));
+  const labelBy = new Map((data.sankey_nodes || []).map(n => [n.name, n.label]));
 
   const over = data.over_budget > 0;
-  const incomeLabel = data.income_source === 'estimated' ? 'Estimated income' : 'Avg income';
+  const incomeLabel =
+    data.income_source === 'sources'
+      ? 'Income (sum of sources)'
+      : data.income_source === 'estimated'
+        ? 'Estimated income'
+        : 'Avg income';
   sankeyMeta.textContent = `${incomeLabel} $${data.avg_income.toLocaleString(undefined,{maximumFractionDigits:0})} · Budgeted $${data.total_budgeted.toLocaleString(undefined,{maximumFractionDigits:0})} · ${over ? '⚠️ Over by $'+data.over_budget.toFixed(0) : 'Unallocated $'+data.unallocated.toFixed(0)}`;
   sankeyMeta.className = 'text-xs ' + (over ? 'text-red-400' : 'text-slate-500');
+
+  const chartEl = document.getElementById('sankey-chart');
+  const nn = (data.sankey_nodes && data.sankey_nodes.length) ? data.sankey_nodes.length : 6;
+  chartEl.style.height = Math.max(300, Math.min(560, 140 + nn * 26)) + 'px';
+
+  const nodes = (data.sankey_nodes || []).map(n => ({
+    name: n.name,
+    itemStyle: { color: n.color || '#94a3b8' },
+    label: { show: true, color: '#e2e8f0', fontSize: 11, formatter: n.label },
+  }));
 
   sankeyChart.setOption({
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
-      formatter: p => p.data.source
-        ? `${p.data.source} → ${p.data.target}<br/><b>$${Number(p.data.value).toLocaleString(undefined,{maximumFractionDigits:0})}</b>`
-        : `<b>${p.name}</b>`,
+      formatter: p => {
+        if (p.data && p.data.source != null) {
+          const s = labelBy.get(p.data.source) || p.data.source;
+          const t = labelBy.get(p.data.target) || p.data.target;
+          return `${s} → ${t}<br/><b>$${Number(p.data.value).toLocaleString(undefined,{maximumFractionDigits:0})}</b>`;
+        }
+        return `<b>${labelBy.get(p.name) || p.name}</b>`;
+      },
     },
     series: [{
       type: 'sankey', data: nodes, links: data.links,
-      emphasis: { focus: 'adjacency' }, nodeAlign: 'left',
+      emphasis: { focus: 'adjacency' }, nodeAlign: 'justify',
       lineStyle: { color: 'gradient', opacity: 0.4 },
-      label: { color: '#e2e8f0', fontSize: 11 }, itemStyle: { borderWidth: 0 },
+      itemStyle: { borderWidth: 0 },
     }],
   }, true);
+  sankeyChart.resize();
 }
 
 refreshSankey();
@@ -276,18 +330,72 @@ function attachBudgetInputListeners(inp) {
 
 document.querySelectorAll('.budget-input').forEach(attachBudgetInputListeners);
 
-// ── Income input ──────────────────────────────────────────────────────────────
-const incomeInput = document.getElementById('income-input');
-incomeInput.addEventListener('blur', async () => {
-  const val = parseFloat(incomeInput.value) || 0;
-  await fetch('/api/budget/income', {
+// ── Income sources (named streams → Sankey merge → expense branches) ─────────
+function attachIncomeSrcListeners(row) {
+  const id = row.dataset.sourceId;
+  const nameInp = row.querySelector('.income-src-name');
+  const amtInp  = row.querySelector('.income-src-amt');
+  if (!nameInp || !amtInp) return;
+
+  nameInp.addEventListener('blur', async () => {
+    await fetch(`/api/budget/income-sources/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nameInp.value.trim() || 'Income' }),
+    });
+    refreshSankey();
+  });
+  nameInp.addEventListener('keydown', e => { if (e.key === 'Enter') nameInp.blur(); });
+
+  amtInp.addEventListener('blur', async () => {
+    const amt = parseFloat(amtInp.value) || 0;
+    await fetch(`/api/budget/income-sources/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monthly_amount: amt }),
+    });
+    refreshSankey();
+  });
+  amtInp.addEventListener('keydown', e => { if (e.key === 'Enter') amtInp.blur(); });
+}
+
+document.querySelectorAll('.income-src-row').forEach(attachIncomeSrcListeners);
+
+document.getElementById('add-income-src-btn').addEventListener('click', async () => {
+  const res = await fetch('/api/budget/income-sources', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ monthly_estimate: val }),
+    body: JSON.stringify({ name: 'Income', monthly_amount: 0 }),
   });
+  const j = await res.json();
+  if (!j.id) return;
+
+  document.getElementById('income-src-empty-hint').classList.add('hidden');
+
+  const tr = document.createElement('tr');
+  tr.className = 'income-src-row border-b border-slate-700/50 hover:bg-slate-700/15 transition-colors';
+  tr.dataset.sourceId = j.id;
+  tr.innerHTML = `
+    <td class="px-4 py-3">
+      <div class="flex items-center gap-2">
+        <input type="text" value="Income"
+               class="income-src-name flex-1 min-w-0 text-sm bg-slate-800 border border-slate-600
+                      rounded px-2 py-1.5 focus:border-emerald-500 outline-none text-emerald-100" />
+        <button type="button" class="remove-src-btn text-slate-600 hover:text-red-400 text-xl leading-none"
+                title="Remove">×</button>
+      </div>
+    </td>
+    <td class="px-4 py-3 text-right text-slate-600 text-sm">—</td>
+    <td class="px-4 py-3 text-right">
+      <input type="number" min="0" step="1" value=""
+             class="income-src-amt w-24 text-right text-sm bg-slate-800 border border-slate-600
+                    rounded px-2 py-1 focus:border-emerald-500 outline-none"
+             placeholder="0" />
+    </td>`;
+  document.getElementById('income-src-empty-hint').insertAdjacentElement('beforebegin', tr);
+  attachIncomeSrcListeners(tr);
   refreshSankey();
 });
-incomeInput.addEventListener('keydown', e => { if (e.key === 'Enter') incomeInput.blur(); });
 
 // ── Add category ──────────────────────────────────────────────────────────────
 let selectedFlowType = 'expense';
@@ -355,6 +463,19 @@ document.getElementById('add-cat-btn').addEventListener('click', async () => {
 
 // ── Remove category ───────────────────────────────────────────────────────────
 document.getElementById('budget-tbody').addEventListener('click', async e => {
+  const sbtn = e.target.closest('.remove-src-btn');
+  if (sbtn) {
+    const row = sbtn.closest('.income-src-row');
+    const sid = row.dataset.sourceId;
+    await fetch(`/api/budget/income-sources/${sid}`, { method: 'DELETE' });
+    row.remove();
+    if (!document.querySelectorAll('.income-src-row').length) {
+      document.getElementById('income-src-empty-hint').classList.remove('hidden');
+    }
+    refreshSankey();
+    return;
+  }
+
   const btn = e.target.closest('.remove-cat-btn');
   if (!btn) return;
   const cat = btn.dataset.category;

@@ -26,3 +26,6 @@ env/
 # ── Uploaded CSV files (may contain account data) ─────────────────────────────
 uploads/
 *.csv
+
+# ── R leftovers ────────────────────────────────────────────────────────────────
+.Rhistory

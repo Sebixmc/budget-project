@@ -87,6 +87,7 @@ def init_db():
         _seed_accounts(conn)
         _migrate_bank_format(conn)
         _migrate_flow_type(conn)
+        _migrate_budget_income_sources(conn)
 
 
 def _migrate_flow_type(conn):
@@ -97,6 +98,32 @@ def _migrate_flow_type(conn):
         )
     except Exception:
         pass  # Column already exists
+
+
+def _migrate_budget_income_sources(conn):
+    """Named income streams for Sankey (multiple branches → hub → expenses)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS budget_income_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL DEFAULT 'Income',
+            monthly_amount REAL NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    n = conn.execute("SELECT COUNT(*) AS c FROM budget_income_sources").fetchone()["c"]
+    if n > 0:
+        return
+    row = conn.execute(
+        "SELECT monthly_estimate FROM budget_income WHERE id = 1"
+    ).fetchone()
+    if row and row["monthly_estimate"] is not None and float(row["monthly_estimate"]) > 0:
+        conn.execute(
+            "INSERT INTO budget_income_sources (name, monthly_amount, sort_order) "
+            "VALUES (?, ?, 0)",
+            ("Estimated income", float(row["monthly_estimate"])),
+        )
 
 
 def _migrate_bank_format(conn):
@@ -693,13 +720,91 @@ def delete_budget_category(category):
 
 # ── Budget income estimate ────────────────────────────────────────────────────
 
-def get_budget_income():
-    """Returns user-set monthly income estimate, or None if not set."""
+SANKEY_CATEGORY_COLORS = {
+    "Groceries": "#10b981",
+    "Dining": "#f59e0b",
+    "Gas & Fuel": "#ef4444",
+    "Transportation": "#06b6d4",
+    "Rent & Housing": "#8b5cf6",
+    "Utilities": "#6366f1",
+    "Subscriptions": "#ec4899",
+    "Shopping": "#0ea5e9",
+    "Education": "#84cc16",
+    "Entertainment": "#f97316",
+    "Health & Medical": "#14b8a6",
+    "Fitness": "#a855f7",
+    "Travel": "#eab308",
+    "Pet": "#22c55e",
+    "Home & Garden": "#3b82f6",
+    "Savings & Investments": "#64748b",
+    "Fees & Charges": "#f43f5e",
+    "Other": "#475569",
+    "Income": "#22d3ee",
+    "Unallocated": "#64748b",
+}
+
+
+def get_budget_income_sources():
+    """Named monthly income streams (shown as separate Sankey branches)."""
+    with get_db() as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, name, monthly_amount, sort_order FROM budget_income_sources "
+                "ORDER BY sort_order, id"
+            ).fetchall()
+        ]
+
+
+def add_budget_income_source(name, monthly_amount):
+    with get_db() as conn:
+        nxt = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM budget_income_sources"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO budget_income_sources (name, monthly_amount, sort_order) VALUES (?, ?, ?)",
+            ((name or "Income").strip() or "Income", float(monthly_amount), nxt),
+        )
+        return conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+
+
+def update_budget_income_source(src_id, name=None, monthly_amount=None):
+    with get_db() as conn:
+        if name is not None:
+            conn.execute(
+                "UPDATE budget_income_sources SET name = ? WHERE id = ?",
+                ((name or "Income").strip() or "Income", int(src_id)),
+            )
+        if monthly_amount is not None:
+            conn.execute(
+                "UPDATE budget_income_sources SET monthly_amount = ? WHERE id = ?",
+                (float(monthly_amount), int(src_id)),
+            )
+
+
+def delete_budget_income_source(src_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM budget_income_sources WHERE id = ?", (int(src_id),))
+
+
+def _legacy_budget_income_estimate():
+    """Single-row legacy estimate (ignored when income_sources has rows)."""
     with get_db() as conn:
         row = conn.execute(
             "SELECT monthly_estimate FROM budget_income WHERE id = 1"
         ).fetchone()
-    return row["monthly_estimate"] if row else None
+    if row and row["monthly_estimate"] is not None:
+        return float(row["monthly_estimate"])
+    return None
+
+
+def get_budget_income():
+    """Total planned monthly income: sum of income_sources if any, else legacy row, else None."""
+    sources = get_budget_income_sources()
+    if sources:
+        return round(sum(float(s["monthly_amount"]) for s in sources), 2)
+    row_val = _legacy_budget_income_estimate()
+    return row_val
 
 
 def set_budget_income(monthly_estimate):
@@ -827,44 +932,163 @@ def get_budget_averages(period="all"):
 def get_budget_sankey_data():
     """
     Returns nodes + links for ECharts sankey.
-    Income flows out to each budgeted category, remainder goes to Unallocated.
-    Uses user-set income estimate if available, otherwise historical average.
+    Multiple income streams (or one fallback) merge into a hub node, then branch
+    to each budgeted expense category; remainder goes to Unallocated.
     """
     budget_cats = get_budget_categories()
     budget_types = get_budget_category_types()
 
-    # Only expense-type categories with a positive limit flow out from income in the Sankey
     expense_cats = {
-        cat: limit for cat, limit in budget_cats.items()
-        if budget_types.get(cat, 'expense') == 'expense' and limit > 0
+        cat: limit
+        for cat, limit in budget_cats.items()
+        if budget_types.get(cat, "expense") == "expense" and limit > 0
     }
     if not expense_cats:
         return None
 
-    # Prefer user-set estimate; fall back to historical average
-    income_estimate = get_budget_income()
-    if income_estimate is not None:
-        avg_income = income_estimate
-        income_source = "estimated"
-    else:
-        avg_income = get_avg_income()
-        income_source = "historical"
+    HUB = "__hub_total_income__"
+    stream_colors = ["#22d3ee", "#34d399", "#38bdf8", "#2dd4bf", "#5eead4", "#67e8f9"]
+
+    sources = get_budget_income_sources()
+    inbound_specs = []
+    income_source_kind = "historical"
+
+    if sources:
+        for idx, s in enumerate(sources):
+            amt = round(float(s["monthly_amount"]), 2)
+            if amt <= 0:
+                continue
+            nid = f"__inc_src_{s['id']}__"
+            inbound_specs.append(
+                {
+                    "nid": nid,
+                    "label": (s["name"] or "Income").strip(),
+                    "color": stream_colors[idx % len(stream_colors)],
+                    "value": amt,
+                }
+            )
+        if inbound_specs:
+            income_source_kind = "sources"
+
+    if not inbound_specs:
+        est = _legacy_budget_income_estimate()
+        if est is not None and est > 0:
+            inbound_specs.append(
+                {
+                    "nid": "__inc_default__",
+                    "label": "Estimated income",
+                    "color": stream_colors[0],
+                    "value": round(est, 2),
+                }
+            )
+            income_source_kind = "estimated"
+        else:
+            hist = round(float(get_avg_income()), 2)
+            if hist > 0:
+                inbound_specs.append(
+                    {
+                        "nid": "__inc_default__",
+                        "label": "Avg income",
+                        "color": stream_colors[0],
+                        "value": hist,
+                    }
+                )
+                income_source_kind = "historical"
 
     total_budgeted = round(sum(expense_cats.values()), 2)
+
+    # No positive inflow to merge — use classic single-node layout (ECharts needs balanced flows)
+    if not inbound_specs:
+        if sources:
+            avg_income = round(sum(float(s["monthly_amount"]) for s in sources), 2)
+            income_source_kind = "sources"
+        elif _legacy_budget_income_estimate() is not None:
+            avg_income = float(_legacy_budget_income_estimate())
+            income_source_kind = "estimated"
+        else:
+            avg_income = round(float(get_avg_income()), 2)
+            income_source_kind = "historical"
+        unallocated = round(avg_income - total_budgeted, 2)
+        links = [
+            {"source": "Income", "target": cat, "value": round(limit, 2)}
+            for cat, limit in sorted(expense_cats.items(), key=lambda x: -x[1])
+        ]
+        if unallocated > 0:
+            links.append({"source": "Income", "target": "Unallocated", "value": unallocated})
+        sankey_nodes = [
+            {"name": "Income", "label": "Income", "color": SANKEY_CATEGORY_COLORS["Income"]},
+        ]
+        for cat, limit in sorted(expense_cats.items(), key=lambda x: -x[1]):
+            sankey_nodes.append(
+                {
+                    "name": cat,
+                    "label": cat,
+                    "color": SANKEY_CATEGORY_COLORS.get(cat, "#94a3b8"),
+                }
+            )
+        if unallocated > 0:
+            sankey_nodes.append(
+                {
+                    "name": "Unallocated",
+                    "label": "Unallocated",
+                    "color": SANKEY_CATEGORY_COLORS["Unallocated"],
+                }
+            )
+        return {
+            "avg_income": avg_income,
+            "income_source": income_source_kind,
+            "total_budgeted": total_budgeted,
+            "unallocated": max(unallocated, 0),
+            "over_budget": abs(min(unallocated, 0)),
+            "links": links,
+            "sankey_nodes": sankey_nodes,
+        }
+
+    avg_income = round(sum(s["value"] for s in inbound_specs), 2)
+
     unallocated = round(avg_income - total_budgeted, 2)
 
-    links = [
-        {"source": "Income", "target": cat, "value": round(limit, 2)}
+    inbound_links = [
+        {"source": s["nid"], "target": HUB, "value": s["value"]} for s in inbound_specs
+    ]
+    outbound_links = [
+        {"source": HUB, "target": cat, "value": round(limit, 2)}
         for cat, limit in sorted(expense_cats.items(), key=lambda x: -x[1])
     ]
     if unallocated > 0:
-        links.append({"source": "Income", "target": "Unallocated", "value": unallocated})
+        outbound_links.append(
+            {"source": HUB, "target": "Unallocated", "value": unallocated}
+        )
+
+    links = inbound_links + outbound_links
+
+    sankey_nodes = [
+        {"name": s["nid"], "label": s["label"], "color": s["color"]} for s in inbound_specs
+    ]
+    sankey_nodes.append({"name": HUB, "label": "Total income", "color": "#0e7490"})
+    for cat, limit in sorted(expense_cats.items(), key=lambda x: -x[1]):
+        sankey_nodes.append(
+            {
+                "name": cat,
+                "label": cat,
+                "color": SANKEY_CATEGORY_COLORS.get(cat, "#94a3b8"),
+            }
+        )
+    if unallocated > 0:
+        sankey_nodes.append(
+            {
+                "name": "Unallocated",
+                "label": "Unallocated",
+                "color": SANKEY_CATEGORY_COLORS["Unallocated"],
+            }
+        )
 
     return {
         "avg_income": avg_income,
-        "income_source": income_source,
+        "income_source": income_source_kind,
         "total_budgeted": total_budgeted,
         "unallocated": max(unallocated, 0),
         "over_budget": abs(min(unallocated, 0)),
         "links": links,
+        "sankey_nodes": sankey_nodes,
     }

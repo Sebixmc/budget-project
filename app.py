@@ -159,6 +159,7 @@ def budget():
     budget_cat_types = db.get_budget_category_types()
     averages = db.get_budget_averages("all")
     income_estimate = db.get_budget_income()
+    income_sources = db.get_budget_income_sources()
     avg_income = db.get_avg_income()
     skip = {'Transfer', 'Uncategorized', 'Income'}
     available_cats = [c for c in ALL_CATEGORIES if c not in skip and c not in budget_cats]
@@ -169,6 +170,7 @@ def budget():
         budget_cat_types=budget_cat_types,
         averages=averages,
         income_estimate=income_estimate,
+        income_sources=income_sources,
         avg_income=avg_income,
         available_cats=available_cats,
     )
@@ -440,6 +442,45 @@ def api_set_budget_income():
         db.clear_budget_income()
     else:
         db.set_budget_income(float(estimate))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/budget/income-sources", methods=["GET"])
+def api_list_budget_income_sources():
+    return jsonify(db.get_budget_income_sources())
+
+
+@app.route("/api/budget/income-sources", methods=["POST"])
+def api_add_budget_income_source():
+    data = request.get_json() or {}
+    name = (data.get("name") or "Income").strip() or "Income"
+    amt = data.get("monthly_amount", 0)
+    try:
+        sid = db.add_budget_income_source(name, float(amt))
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid monthly_amount"}), 400
+    return jsonify({"ok": True, "id": sid})
+
+
+@app.route("/api/budget/income-sources/<int:sid>", methods=["PATCH"])
+def api_patch_budget_income_source(sid):
+    data = request.get_json() or {}
+    name = data.get("name")
+    amt = data.get("monthly_amount")
+    if name is None and amt is None:
+        return jsonify({"error": "name or monthly_amount required"}), 400
+    try:
+        if amt is not None:
+            amt = float(amt)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid monthly_amount"}), 400
+    db.update_budget_income_source(sid, name=name, monthly_amount=amt)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/budget/income-sources/<int:sid>", methods=["DELETE"])
+def api_delete_budget_income_source(sid):
+    db.delete_budget_income_source(sid)
     return jsonify({"ok": True})
 
 

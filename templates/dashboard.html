@@ -8,14 +8,14 @@
   <h1 class="text-2xl font-bold text-white">Dashboard</h1>
 
   <form method="GET" class="flex flex-wrap gap-2 items-center">
-    <select name="month" onchange="this.form.submit()" class="text-sm">
+    <select name="month" onchange="this.form.submit()" class="text-sm select-matte">
       <option value="">All time</option>
       {% for m in months %}
         <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
       {% endfor %}
     </select>
 
-    <select name="account_id" onchange="this.form.submit()" class="text-sm">
+    <select name="account_id" onchange="this.form.submit()" class="text-sm select-matte">
       <option value="">All accounts</option>
       {% for acct in accounts %}
         <option value="{{ acct.id }}" {% if acct.id == selected_account %}selected{% endif %}>
