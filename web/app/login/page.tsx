@@ -1,11 +1,38 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
+import { CheckCircle2 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-// Placeholder shell. Supabase Auth (magic-link) is wired up in PR3
-// (feat/supabase-schema-rls). This page exists so navigation resolves and to
-// preview the auth surface in the design system.
 export default function LoginPage() {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus("sending");
+    setMessage("");
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/confirm?next=/dashboard`,
+        },
+      });
+      if (error) throw error;
+      setStatus("sent");
+    } catch (err) {
+      setStatus("error");
+      setMessage(err instanceof Error ? err.message : "Something went wrong. Try again.");
+    }
+  }
+
   return (
     <main className="grid min-h-screen place-items-center px-6">
       <Card className="w-full max-w-sm">
@@ -21,20 +48,35 @@ export default function LoginPage() {
             We&apos;ll email you a magic link — no password to remember.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <input
-            type="email"
-            inputMode="email"
-            placeholder="you@example.com"
-            disabled
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-          />
-          <Button disabled className="w-full">
-            Email me a link
-          </Button>
-          <p className="text-center text-xs text-muted-foreground">
-            Authentication is enabled in the next release.
-          </p>
+        <CardContent>
+          {status === "sent" ? (
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <CheckCircle2 className="size-8 text-positive" />
+              <p className="text-sm">
+                Check <span className="font-medium">{email}</span> for a sign-in link.
+              </p>
+              <Button variant="ghost" size="sm" onClick={() => setStatus("idle")}>
+                Use a different email
+              </Button>
+            </div>
+          ) : (
+            <form onSubmit={onSubmit} className="flex flex-col gap-3">
+              <Input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                required
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={status === "sending"}
+              />
+              <Button type="submit" className="w-full" disabled={status === "sending" || !email}>
+                {status === "sending" ? "Sending…" : "Email me a link"}
+              </Button>
+              {status === "error" && <p className="text-sm text-negative">{message}</p>}
+            </form>
+          )}
         </CardContent>
       </Card>
     </main>
