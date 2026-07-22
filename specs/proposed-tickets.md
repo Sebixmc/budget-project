@@ -44,6 +44,17 @@ _Test coverage, lint config, the start script, local-run ergonomics._
 - **Normalize legacy modules to ruff-clean and widen CI lint to the whole repo** — `app.py`, `database.py`, `parser.py`, `categorizer.py` predate ruff; CI currently lints only `tests/`. Run `ruff check --fix .` + `ruff format .`, eyeball the diff (especially import reordering), then change `.github/workflows/ci.yml` to lint `.` instead of `tests/`. Surfaced by: infra-template application. 2026-07-22
 - **Expand test coverage to `parser.py` and `database.py`** — only `categorizer.py` and a boot smoke test exist so far. Add parser tests per bank format (Capital One credit/bank, UCCU) using synthetic CSV bytes, and DB idempotency tests for `insert_transactions`. Surfaced by: infra-template application. 2026-07-22
 
+### Hosted rewrite — deferred parity (web/)
+
+_Legacy Flask features not yet reproduced in the Next.js port. See [`hosted-rewrite.md`](hosted-rewrite.md) / [ADR-004](../adr/004-hosted-multi-user-supabase.md)._
+
+- **Dashboard goals + rainy-day widgets** — the `goals` and `rainy_day_log` tables exist with RLS in `web/supabase/migrations/0001_init.sql`, but the Dashboard doesn't yet render the goal cards or rainy-day balance widget. Port CRUD + progress bars. Surfaced by: hosted rewrite PR7. 2026-07-22
+- **Budget Sankey diagram** — the Budget page shows an allocation summary (income → allocated → unallocated/over) instead of the legacy ECharts Sankey. Add a Sankey (recharts has one, or ECharts-react) once the planner is validated. Surfaced by: hosted rewrite PR9. 2026-07-22
+- **Expandable sunburst on Dashboard** — legacy had a click-to-expand 3-level sunburst with a detail panel; the port uses a category donut + breakdown table. Reintroduce the sunburst interaction if wanted. Surfaced by: hosted rewrite PR7. 2026-07-22
+- **"Save as rule" from a transaction edit** — legacy offered a floating "save this as a rule?" panel after a manual category change. The port has Rules CRUD + Transactions inline edit separately; wire the shortcut between them. Surfaced by: hosted rewrite PR6. 2026-07-22
+- **Migrate existing local budget.db into Supabase** — users currently start fresh by re-uploading CSVs. A one-time importer (read SQLite → insert under the user's id) would preserve manual categorizations/notes. Surfaced by: hosted rewrite. 2026-07-22
+- **Legacy Flask retirement** — once the hosted app is validated against real data, remove `app.py`/`database.py`/`templates/` etc. and collapse root docs to point at `web/`. Surfaced by: hosted rewrite. 2026-07-22
+
 ### Documentation gaps
 
 _Docs that are missing, stale, or misleading (including `spec.md` drift)._
