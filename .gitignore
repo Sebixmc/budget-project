@@ -20,8 +20,20 @@ env/
 .DS_Store
 *.DS_Store
 
-# ── Claude Code session files ──────────────────────────────────────────────────
-.claude/
+# ── Claude Code ─────────────────────────────────────────────────────────────────
+# The shared agent infra IS committed (.claude/agents, .claude/commands,
+# .claude/settings.json, .claude/launch.json) so every clone gets the same
+# guardrails. Only personal/transient session files are ignored:
+.claude/settings.local.json
+.claude/*.local.json
+.claude/projects/
+.claude/todos/
+.claude/shell-snapshots/
+.claude/statsig/
+.claude/history.jsonl
+
+# Personal, machine-specific agent notes
+CLAUDE.local.md
 
 # ── Uploaded CSV files (may contain account data) ─────────────────────────────
 uploads/

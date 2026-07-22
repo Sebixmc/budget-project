@@ -1,0 +1,11 @@
+# CLAUDE.local.md (personal, not committed)
+
+Copy this to `CLAUDE.local.md` for personal, machine-specific notes that shouldn't be shared with everyone who clones the repo. `CLAUDE.local.md` is gitignored.
+
+Use it for things like:
+
+- The absolute path to your copy of the project on your machine.
+- Personal reminders about your own bank exports (which account maps to which CSV format).
+- Any local tweaks to how you run the app.
+
+Nothing here overrides the shared rules in [`CLAUDE.md`](CLAUDE.md) — it just adds personal context for your own sessions.

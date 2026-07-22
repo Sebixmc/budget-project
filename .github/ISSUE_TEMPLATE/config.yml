@@ -1,0 +1,6 @@
+# Work is tracked in spec.md's "Open Work Queue", not GitHub Issues.
+blank_issues_enabled: false
+contact_links:
+  - name: Work is tracked in spec.md
+    url: https://github.com
+    about: "This project's work queue lives in spec.md (the 'Open Work Queue' section), not GitHub Issues. Add or pick up items there."

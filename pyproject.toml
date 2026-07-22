@@ -1,0 +1,24 @@
+# Tooling config only (ruff + pytest). This is NOT a packaged/installable
+# project — the app runs directly via `python3 app.py`. No [build-system] or
+# [project] section on purpose.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# A pragmatic default set: pyflakes (F), pycodestyle errors (E), warnings (W),
+# import sorting (I), and common bugbears (B).
+select = ["E", "F", "W", "I", "B"]
+# E501 (line too long) is noisy on this codebase's long SQL strings and keyword
+# lists; ruff format handles real formatting. Keep the meaningful checks.
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+# Local application modules, so import sorting groups them separately.
+known-first-party = ["app", "database", "parser", "categorizer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

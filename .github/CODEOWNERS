@@ -1,0 +1,12 @@
+# Code owners are requested for review automatically on matching paths.
+# Replace @YOUR_GITHUB_HANDLE with your GitHub username (or a team) once the
+# repo lives on GitHub. Until then this file documents intended ownership.
+
+# Default owner for everything
+*                       @YOUR_GITHUB_HANDLE
+
+# Rules and durable decisions deserve extra care.
+/CLAUDE.md              @YOUR_GITHUB_HANDLE
+/spec.md                @YOUR_GITHUB_HANDLE
+/adr/                   @YOUR_GITHUB_HANDLE
+/.github/               @YOUR_GITHUB_HANDLE

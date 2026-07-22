@@ -6,6 +6,8 @@
 
 This spec is the source of truth for the project's state and the work queue. **Read it before starting any task.**
 
+> **Repo guardrails (added 2026-07-22).** This project now also carries the startup-infrastructure agent scaffolding, adapted for its local-only Flask stack: root [`CLAUDE.md`](CLAUDE.md) (the agent contract + hard rules), per-folder `CLAUDE.md` files, `.claude/` subagents and slash commands (`/orient`, `/todo`, `/pickup`, `/specify`, `/handoff`, `/new-adr`, `/review-pr`), and the `docs/` · `specs/` · `adr/` · `handoff/` folders. **This file (`spec.md`) remains the master source of truth and the work queue** — the new folders add detail around it: `docs/` is durable reference, `specs/` holds per-feature EARS specs, `adr/` records why (seeded from the Decisions Log below), `handoff/` is the session trail. Start a session with `/orient`.
+
 ### Status convention
 
 Every actionable item in this spec ends with a status tag. When you work on an item, update its tag in-place — never leave it stale.

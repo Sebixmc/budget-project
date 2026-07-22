@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      # NOTE: scoped to tests/ for now. The legacy app modules (app.py,
+      # database.py, parser.py, categorizer.py) predate ruff and aren't yet
+      # normalized — expanding this to the whole repo is tracked in
+      # specs/proposed-tickets.md. Do not widen the scope until they're clean,
+      # or this job will go red on pre-existing code.
+      - name: Ruff lint
+        run: ruff check tests/
+      - name: Ruff format check
+        run: ruff format --check tests/
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - name: Pytest (unit + Flask boot smoke)
+        run: pytest
