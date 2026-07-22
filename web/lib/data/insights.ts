@@ -162,6 +162,25 @@ export async function getMonthlyReport(month: string, accountId?: string): Promi
   };
 }
 
+/** All-time monthly averages per spending category + monthly income average.
+ *  Used by the Budget planner as the historical reference. Excludes transfers. */
+export async function getCategoryAverages(
+  accountId?: string,
+): Promise<{ byCategory: Record<string, number>; income: number }> {
+  const rows = await fetchNonTransferRows(accountId);
+  const months = new Set(rows.map((r) => monthOf(r.date)));
+  const n = months.size || 1;
+  const cat = new Map<string, number>();
+  let income = 0;
+  for (const r of rows) {
+    if (r.flow === "debit") cat.set(r.category, (cat.get(r.category) ?? 0) + r.amount);
+    else income += r.amount;
+  }
+  const byCategory: Record<string, number> = {};
+  for (const [c, amt] of cat) byCategory[c] = round2(amt / n);
+  return { byCategory, income: round2(income / n) };
+}
+
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
