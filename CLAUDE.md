@@ -4,19 +4,25 @@
 
 ## Project orientation
 
-Family Budget App is a **local-only** web app for a household (Sebi & Olivia) to track and understand spending across their Capital One and UCCU bank accounts. It runs entirely on the user's own machine at `http://127.0.0.1:5001`. There is **no cloud, no auth, no shared server**: each person clones the code and runs their own isolated copy against their own `budget.db`. The app is shareable *as code* — the database and raw bank CSVs never leave the machine and are never committed.
+Family Budget App is a **hosted, multi-user** web app for a household (Sebi & Olivia) to track and understand spending across their Capital One and UCCU bank accounts. It runs as a **Next.js app on Vercel** backed by **Supabase** (managed Postgres + Auth), reachable from any device. Each person signs in and sees **only their own** data; isolation is enforced in the database by **Row-Level Security (RLS)**, not by running separate copies.
 
-**The one load-bearing rule:** financial data is local and private. Nothing in this codebase may transmit, sync, upload, or phone home a user's transactions, account data, `budget.db`, or CSV exports. No telemetry, no analytics, no third-party API that receives financial data. If a change would send financial data off the device, it is wrong — see [`adr/001-local-only-no-cloud.md`](adr/001-local-only-no-cloud.md).
+> **Architecture pivot in progress (2026-07-22, [ADR-004](adr/004-hosted-multi-user-supabase.md)).** The app is migrating from the original local-only Flask/SQLite stack to the hosted Next.js/Supabase stack. During the migration the legacy Flask app (`app.py`, `database.py`, `parser.py`, `categorizer.py`, `templates/`) still lives at the repo root as the reference implementation; the new app is built in [`web/`](web/). When the port is complete the Flask app is retired. Where a rule below says "legacy," it means the Flask code being ported out.
+
+**The one load-bearing rule:** a user's financial data is visible only to that user. Every table holding user data carries a `user_id` and is protected by an RLS policy (`user_id = auth.uid()`), so no code path — even a buggy one — can return one user's transactions, accounts, `budget.db`-equivalent rows, or uploaded CSV contents to another user. The Supabase **`service_role` key never reaches the browser or the client bundle**; it lives only in server-side environment variables. No telemetry or third-party analytics receives financial data. If a change could leak one user's data to another or move the service key clientward, it is wrong — see [`adr/004-hosted-multi-user-supabase.md`](adr/004-hosted-multi-user-supabase.md).
 
 ## Tech stack
 
-- **Python 3 + Flask** — the app (`app.py`), served on port **5001** in debug mode. The Flask app object is `app.app`.
-- **SQLite in WAL mode** — `budget.db` in the project folder, created on first run. All schema + queries live in `database.py`.
-- **Jinja2 templates** (`templates/`) + **Tailwind CSS (CDN)** + **Chart.js / ECharts (CDN)** — no build step, no bundler, no `node_modules`.
-- **Multi-bank CSV parsing** (`parser.py`) and **keyword/merchant-rule categorization** (`categorizer.py`) are pure-ish Python modules — the easiest and highest-value things to unit-test.
-- **pytest** for tests, **ruff** for lint + format. Dev tools are in `requirements-dev.txt`.
+**Target stack (the hosted app, in [`web/`](web/)):**
 
-There is deliberately **no** package manager beyond `pip`, no TypeScript, no Supabase, no Vercel, no Next.js. This app's whole point is that it runs offline on one machine. Do not add cloud services, a login system, or a database server without an ADR that revisits the local-only decision.
+- **Next.js (App Router) + TypeScript** — deployed on **Vercel**. Server Components + Route Handlers / Server Actions for data access; the Supabase `service_role` key is used **only** in server-side code.
+- **Supabase** — managed **Postgres** (data), **Auth** (passwordless magic-link / OAuth), and **Storage**. All schema lives in `web/supabase/migrations/` as SQL migrations; **every table has `user_id` + RLS**.
+- **Tailwind CSS** + a **first-party design system** (design tokens + reusable UI primitives in `web/components/ui/`). Charts via a React charting lib (ECharts/Recharts). Real build step, `package.json`, `node_modules`.
+- **Pure, testable logic** — CSV parsing and categorization are ported to framework-free TypeScript modules (`web/lib/parser.ts`, `web/lib/categorizer.ts`) so they unit-test directly, just like the Python originals.
+- **Vitest** for tests, **ESLint + Prettier** (or Biome) for lint/format, **`tsc --noEmit`** for typecheck.
+
+**Legacy stack (being ported out, repo root):** Python 3 + Flask (`app.py`), SQLite `budget.db` (`database.py`), Jinja templates (`templates/`), `parser.py` + `categorizer.py`, pytest + ruff. Keep it working as the reference until the port is complete; don't add new features to it.
+
+Do not add a payments processor, a bank-credential/Plaid integration, or move the `service_role` key toward the client without an ADR — see [ADR-004](adr/004-hosted-multi-user-supabase.md).
 
 ## Knowledge base pointer
 
@@ -48,7 +54,7 @@ This is a git repo. `budget.db`, `*.csv`, `.venv/`, and secrets are gitignored a
 - Do work on feature branches off `main` when the change is non-trivial: `<type>/<short-description>` where type is `feat` / `fix` / `chore` / `docs`. Keep the description hyphenated and under ~5 words.
 - Keep changes small and focused. Prefer a sequence of small commits/PRs over one large one.
 - Use Conventional Commit messages: `feat: ...`, `fix: ...`, `chore: ...`, `docs: ...`.
-- Do not run destructive git commands (`git push --force`, `git reset --hard` on shared history) without explicit confirmation in chat. If the repo is pushed to GitHub, CI (`ruff` + `pytest`) must pass before merge.
+- Do not run destructive git commands (`git push --force`, `git reset --hard` on shared history) without explicit confirmation in chat. CI must pass before merge: for `web/`, that's lint + typecheck + Vitest + `next build`; for the legacy Flask code, `ruff` + `pytest`.
 
 ## Spec-driven workflow rules
 
@@ -62,8 +68,8 @@ For anything larger than a one-file change, write the spec **before** implementa
 
 - **Lint + format with ruff.** Ruff config is in `pyproject.toml`. Run `ruff check` and `ruff format --check` on the files you touched before claiming a task done. Don't hand-format against ruff or add a competing formatter (no black/flake8/isort — ruff does all three). Note: the legacy app modules (`app.py`, `database.py`, `parser.py`, `categorizer.py`) predate ruff and aren't normalized yet, so CI lints only `tests/` for now — normalizing them and widening CI is a tracked follow-up in [`/specs/proposed-tickets.md`](specs/proposed-tickets.md). New Python you write should be ruff-clean.
 - **Tests ship with the feature**, in the same change — not a follow-up. Put them in `tests/` as `test_*.py`. The pure modules (`parser.py`, `categorizer.py`) and DB helpers (`database.py`) are the priority; run `pytest -q`.
-- **Verify on a running server before marking anything done.** `bash start.sh` (or `python3 app.py`) must boot to `http://127.0.0.1:5001`, all nav tabs must load HTTP 200, and the feature you touched must work in the browser. Port stuck? `lsof -i :5001 -t | xargs kill -9`.
-- **Keep parsing and categorization pure and testable.** `parser.detect_and_parse` and `categorizer.categorize` should stay free of DB/Flask imports so they can be unit-tested directly.
+- **Verify on a running server before marking anything done.** For `web/`: `npm run build` must pass and `npm run dev` must boot to `http://127.0.0.1:3000` with the feature working in the browser against a real Supabase project (or local Supabase). For legacy Flask: `python3 app.py` boots to `http://127.0.0.1:5001`. Port stuck? `lsof -i :3000 -t | xargs kill -9`.
+- **Keep parsing and categorization pure and testable.** `web/lib/parser.ts` and `web/lib/categorizer.ts` (and their legacy `parser.detect_and_parse` / `categorizer.categorize` originals) stay free of DB/framework imports so they can be unit-tested directly.
 
 ## Communication and behavior rules
 
@@ -87,10 +93,10 @@ During work you'll notice things worth doing that aren't part of the current tas
 
 These are domain invariants drawn from how the app actually works ([`spec.md`](spec.md)). State each as something you can check your diff against.
 
-1. **Financial data stays on the device.** No code path may transmit transactions, account data, `budget.db`, or CSV contents to any network endpoint, third party, telemetry sink, or cloud service. (Load-bearing — [`adr/001-local-only-no-cloud.md`](adr/001-local-only-no-cloud.md).)
-2. **Never commit financial data.** `*.db`, `*.db-shm`, `*.db-wal`, `*.csv`, and `uploads/` are gitignored and must never be added, even in tests or fixtures. Test fixtures use synthetic data only.
-3. **Transfers are excluded from every spending/income/insight calculation.** Any query that totals, averages, or charts money filters out `category = 'Transfer'`. Adding a new metric means adding that filter — see the existing queries in `database.py`.
+1. **A user's data is visible only to that user, enforced by RLS.** Every table holding user data has a `user_id` column and RLS policies scoping every row to `auth.uid()`. New tables ship with `user_id` + RLS **in the same migration** — never a table without it. No query, view, or RPC may return another user's rows. (Load-bearing — [`adr/004-hosted-multi-user-supabase.md`](adr/004-hosted-multi-user-supabase.md).)
+2. **The `service_role` key is server-only; never commit secrets.** The `service_role` / service key and any DB connection string live only in server-side env vars (never `NEXT_PUBLIC_*`, never in the client bundle). `.env*` files are gitignored and never committed. The browser gets only the public `anon` key, which is inert without a session because of RLS. Test fixtures use synthetic data only — no real transactions or CSVs in the repo or CI, ever.
+3. **Transfers are excluded from every spending/income/insight calculation.** Any query that totals, averages, or charts money filters out `category = 'Transfer'`. Adding a new metric means adding that filter — see the ported queries in `web/lib/` (and the legacy `database.py` for reference).
 4. **Amounts are always stored positive; direction lives in `flow`** (`'debit'` or `'credit'`). Never store a signed amount. Never infer direction from the sign.
-5. **Schema changes are additive, in-place migrations.** Follow the `_migrate_*` pattern in `database.py`: `ALTER TABLE ... ADD COLUMN` or `CREATE TABLE IF NOT EXISTS`, wrapped so an existing `budget.db` upgrades without data loss. Never rewrite or drop a user's data to change the schema. (See [`adr/003-additive-sqlite-migrations.md`](adr/003-additive-sqlite-migrations.md).)
-6. **CSV re-uploads are idempotent.** The `UNIQUE(account_id, date, description, amount, flow)` constraint on `transactions` is what makes re-importing the same export safe (duplicates are skipped, not doubled). Don't weaken or bypass it.
+5. **Schema changes are additive, forward migrations.** Add a new timestamped SQL file to `web/supabase/migrations/`; use `ALTER TABLE ... ADD COLUMN` / `CREATE TABLE IF NOT EXISTS`. Never rewrite or drop a user's data to change the schema, and never edit an already-applied migration — write a new one. (Spirit of [`adr/003-additive-sqlite-migrations.md`](adr/003-additive-sqlite-migrations.md), carried into Postgres.)
+6. **CSV re-uploads are idempotent.** A `UNIQUE(user_id, account_id, date, description, amount, flow)` constraint on `transactions` is what makes re-importing the same export safe (duplicates are skipped, not doubled). Don't weaken or bypass it.
 7. **Merchant rules win over keyword matching** during categorization, and manual categorizations (`category_source = 'manual'`) are never overwritten by auto-categorization or rule re-application. (See [`adr/002-multi-bank-via-bank-format.md`](adr/002-multi-bank-via-bank-format.md) for the related bank-format decision.)
