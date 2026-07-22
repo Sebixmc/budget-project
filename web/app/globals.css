@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/*
+ * ============================================================================
+ *  Ledger — Family Budget App design system
+ * ----------------------------------------------------------------------------
+ *  One source of truth for color, type, radius, shadow, and motion tokens.
+ *  Semantic tokens (--background, --primary, ...) are defined per theme in
+ *  :root / .dark below, then exposed to Tailwind utilities via @theme inline
+ *  so `bg-background`, `text-muted-foreground`, `border-border`, etc. work.
+ *  Never hard-code a hex in a component — reach for a token.
+ * ============================================================================
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---- Semantic tokens: light ------------------------------------------------ */
+:root {
+  --radius: 0.75rem;
+
+  --background: oklch(0.99 0.004 285);
+  --foreground: oklch(0.22 0.02 285);
+
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+
+  --muted: oklch(0.96 0.005 285);
+  --muted-foreground: oklch(0.52 0.02 285);
+
+  --border: oklch(0.91 0.006 285);
+  --input: oklch(0.91 0.006 285);
+  --ring: oklch(0.62 0.14 163);
+
+  /* Brand: emerald — money, growth, "in the green". */
+  --primary: oklch(0.62 0.14 163);
+  --primary-foreground: oklch(0.99 0.01 163);
+
+  --accent: oklch(0.95 0.03 163);
+  --accent-foreground: oklch(0.35 0.09 163);
+
+  /* Semantic financial signals. */
+  --positive: oklch(0.62 0.14 163);
+  --positive-foreground: oklch(0.99 0.01 163);
+  --negative: oklch(0.58 0.19 17);
+  --negative-foreground: oklch(0.99 0.01 17);
+  --warning: oklch(0.75 0.15 75);
+  --warning-foreground: oklch(0.28 0.07 75);
+
+  --shadow-color: 285 20% 12%;
+}
+
+/* ---- Semantic tokens: dark ------------------------------------------------- */
+.dark {
+  --background: oklch(0.19 0.015 285);
+  --foreground: oklch(0.95 0.006 285);
+
+  --card: oklch(0.23 0.017 285);
+  --card-foreground: var(--foreground);
+
+  --muted: oklch(0.27 0.017 285);
+  --muted-foreground: oklch(0.68 0.015 285);
+
+  --border: oklch(0.3 0.017 285);
+  --input: oklch(0.32 0.017 285);
+  --ring: oklch(0.7 0.14 163);
+
+  --primary: oklch(0.7 0.14 163);
+  --primary-foreground: oklch(0.2 0.03 163);
+
+  --accent: oklch(0.32 0.05 163);
+  --accent-foreground: oklch(0.9 0.05 163);
+
+  --positive: oklch(0.7 0.14 163);
+  --positive-foreground: oklch(0.2 0.03 163);
+  --negative: oklch(0.68 0.17 17);
+  --negative-foreground: oklch(0.15 0.03 17);
+  --warning: oklch(0.8 0.14 75);
+  --warning-foreground: oklch(0.24 0.06 75);
+
+  --shadow-color: 285 40% 3%;
+}
+
+/* ---- Expose tokens to Tailwind -------------------------------------------- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-positive: var(--positive);
+  --color-positive-foreground: var(--positive-foreground);
+  --color-negative: var(--negative);
+  --color-negative-foreground: var(--negative-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --shadow-xs: 0 1px 2px hsl(var(--shadow-color) / 0.06);
+  --shadow-sm: 0 1px 3px hsl(var(--shadow-color) / 0.08), 0 1px 2px -1px hsl(var(--shadow-color) / 0.08);
+  --shadow-md: 0 4px 12px -2px hsl(var(--shadow-color) / 0.1), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08);
+  --shadow-lg: 0 12px 32px -8px hsl(var(--shadow-color) / 0.16);
+}
+
+/* ---- Base layer ----------------------------------------------------------- */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Tabular figures everywhere money is shown. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+  ::selection {
+    background: var(--color-accent);
+    color: var(--color-accent-foreground);
+  }
+}
