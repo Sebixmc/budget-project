@@ -36,9 +36,9 @@ Before marking anything `[COMPLETED]`, the server must run cleanly: `python3 app
 
 ## What It Is
 
-A local-only web app for Sebi & Olivia to track and understand spending across their Capital One and UCCU (Utah Community Credit Union) accounts. Runs entirely on the user's machine at `http://127.0.0.1:5001`.
+> **⚠️ Architecture pivot in progress (2026-07-22 — [ADR-004](adr/004-hosted-multi-user-supabase.md), [`specs/hosted-rewrite.md`](specs/hosted-rewrite.md)).** The app is moving from local-only Flask/SQLite to a **hosted, multi-user** app on **Vercel + Supabase**, reachable from any device, with per-user isolation enforced by Postgres **Row-Level Security**. The new app is built in [`web/`](web/); the Flask app documented below (pages, API, data model) is the **feature-parity reference** for the port and keeps working until cutover. Sections describing routes/templates/SQLite are legacy-accurate; the *behavior* they describe is the target for the Next.js rebuild.
 
-It is also designed to be **shareable as code** — anyone can clone the repo and run their own isolated copy, with no shared server, no login, and no way to see each other's financial data.
+A budget web app for Sebi & Olivia to track and understand spending across their Capital One and UCCU (Utah Community Credit Union) accounts. Originally local-only; now migrating to a hosted app each person signs into from any device, seeing only their own data.
 
 ---
 
@@ -77,10 +77,16 @@ The other person gets a clean empty app on their machine. Your financial data ne
 ---
 
 ## Tech Stack
-- **Backend:** Python 3 + Flask (port 5001, debug mode)
-- **Database:** SQLite in WAL mode — `budget.db` in the project folder
-- **Frontend:** Jinja2 templates, Tailwind CSS (CDN), Chart.js (CDN), ECharts 5 (CDN)
-- **No auth, no cloud, no external services**
+
+**Target (hosted, in `web/` — see [ADR-004](adr/004-hosted-multi-user-supabase.md)):**
+- **App:** Next.js (App Router) + TypeScript on **Vercel**
+- **Data + Auth:** **Supabase** — managed Postgres (RLS on every table), Auth (magic-link/OAuth), Storage
+- **Frontend:** React Server/Client Components, Tailwind + first-party design system, ECharts (React wrapper)
+- **Pure logic:** `web/lib/parser.ts`, `web/lib/categorizer.ts`; tests in Vitest
+- **Security:** per-user RLS; `service_role` key server-only; no bank-credential/Plaid integration
+
+**Legacy (reference implementation, repo root, being ported out):**
+- Python 3 + Flask (port 5001) · SQLite WAL `budget.db` · Jinja2 + Tailwind/Chart.js/ECharts CDN · pytest + ruff
 
 ---
 
@@ -327,6 +333,7 @@ Pick up `[UNTOUCHED]` items in priority order. Add new items as `[UNTOUCHED]` if
 
 ### High priority
 
+- [ ] **Hosted rewrite — Next.js + Supabase on Vercel** — migrate to a hosted, multi-user app reachable from any device, per-user isolation via Postgres RLS, first-class design system. Spec: [`specs/hosted-rewrite.md`](specs/hosted-rewrite.md); decision: [ADR-004](adr/004-hosted-multi-user-supabase.md). Shipping as a PR sequence: (1) docs/decision, (2) Next.js+design-system+CI foundation, (3) schema+RLS+auth, (4) parser/categorizer port + tests, (5+) one PR per page. `[IN PROGRESS — 2026-07-22: PR1 docs/decision underway]`
 - [ ] **Budget vs reality comparison in dashboard/monthly** — when the user has budget targets set, show a "$X of $Y budgeted (Z% used)" indicator per category on the dashboard's category breakdown table and on the monthly tab. Color: green if under, amber/red if over. `[UNTOUCHED]`
 - [ ] **Olivia's Checking CSV** — confirm a UCCU or Capital One export from her checking account uploads cleanly end-to-end. Watch for unexpected description formats or classification labels not yet in the fallback map. `[UNTOUCHED]`
 - [ ] **Savor Credit Card CSV upload** — confirm the `capital_one_credit` parser path imports successfully with a real Savor export. `[UNTOUCHED]`
@@ -369,7 +376,8 @@ Pick up `[UNTOUCHED]` items in priority order. Add new items as `[UNTOUCHED]` if
 
 Short record of architectural/UX decisions so future agents understand the *why*.
 
-- **Local-only, no auth, share-the-code model** — chosen over a shared server with login to avoid password loops, account management complexity, and the security burden of holding multiple users' financial data. Each person's data lives on their own machine, full stop.
+- **Hosted, multi-user on Vercel + Supabase (2026-07-22, [ADR-004](adr/004-hosted-multi-user-supabase.md))** — reverses the local-only decision below. The app is now reachable from any device; per-user isolation is enforced by Postgres Row-Level Security (`user_id = auth.uid()` on every table) rather than by separate machines. The `service_role` key is server-only. This supersedes the entry immediately below.
+- **~~Local-only, no auth, share-the-code model~~ (superseded by ADR-004)** — chosen over a shared server with login to avoid password loops, account management complexity, and the security burden of holding multiple users' financial data. Each person's data lived on their own machine. Kept for history; no longer governs the project.
 - **Multi-bank via `bank_format` field on accounts** — chosen over branching on account type (`checking` vs `credit`) so we can add UCCU/Ally/etc. without growing the type enum, and so the same account type can have different CSV formats per bank.
 - **Merchant rules priority** — rules win over keyword matching during import. Rationale: if the user explicitly told the system "this merchant is X", that's higher signal than any heuristic.
 - **Budget tab is planning-only** — actuals/deltas were removed intentionally so the page is a clean decision-making surface. The budget-vs-reality view lives on dashboard/monthly where actuals already live.

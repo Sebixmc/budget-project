@@ -1,6 +1,8 @@
 # ADR-001: Local-only, no auth, share-the-code
 
-**Status**: Accepted
+> **Superseded by [ADR-004](004-hosted-multi-user-supabase.md)** (2026-07-22). The app moved to a hosted, multi-user model on Vercel + Supabase with database-enforced Row-Level Security. This record is kept for history; the local-only rule below no longer governs the project.
+
+**Status**: Superseded by ADR-004
 **Date**: 2026-05-07
 **Deciders**: Sebi
 
