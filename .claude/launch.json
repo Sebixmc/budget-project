@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["app.py"],
       "port": 5001
+    },
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["web/node_modules/next/dist/bin/next", "dev", "web"],
+      "port": 3000
     }
   ]
 }
