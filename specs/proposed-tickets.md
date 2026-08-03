@@ -29,6 +29,10 @@ _Things that add product capability. Usually need a spec before implementation._
 - **Weekly budget periods** — some bills are weekly; monthly-only budgeting is awkward for them. Surfaced by: budget-tab session. 2026-07-22
 -->
 
+- **Automatic bank sync instead of manual CSV upload** — replace the monthly CSV chore with a daily pull. Capital One has no self-serve API (OFX/Direct Connect is dead, DevExchange is partner-gated), so this means an aggregator: SimpleFIN Bridge (~$1.50/mo, read-only, no SDK, likely first choice), Teller (free tier, embed a Connect flow), or Plaid (best Capital One OAuth + `/transactions/sync`, but needs production approval and costs more). **Requires an ADR before implementation** per root CLAUDE.md — storing long-lived bank access tokens is a bigger sensitivity jump than the transaction data itself (needs its own `user_id` + RLS table, encrypted at rest, server-side exchange only, Vercel Cron for the pull). The existing `UNIQUE(user_id, account_id, date, description, amount, flow)` constraint already makes overlapping re-fetches idempotent, and `lib/categorizer.ts` is unaffected. Verify current Capital One coverage/pricing with the vendor before writing code. Surfaced by: first-deploy session, deferred by developer. 2026-08-03
+- **Auto-detect bank format from CSV headers** — `detectAndParse()` in `web/lib/parser.ts` doesn't actually detect; it switches on a `bankFormat` the caller passes in. The three formats have disjoint headers (`Card No.` / `Transaction Description` / `Classification`), so header sniffing is ~20 lines and removes a dropdown plus a chance to pick the wrong format. Cheap friction win, independent of any aggregator work. Surfaced by: first-deploy session. 2026-08-03
+- **Accept pasted CSV text on the Upload page** — a textarea alongside the file picker; often faster than the Files app on mobile. Surfaced by: first-deploy session. 2026-08-03
+
 ### Bugs and follow-ups
 
 _Things noticed in passing that are broken, fragile, or need fixing._
