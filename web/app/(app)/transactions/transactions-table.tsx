@@ -1,20 +1,32 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
 import { ALL_CATEGORIES } from "@/lib/categorizer";
+import { cleanMerchantPattern } from "@/lib/merchant";
 import type { Transaction } from "@/lib/data/transactions";
+import { RulePrompt } from "@/components/app/rule-prompt";
 import { bulkCategory, updateCategory, updateNotes } from "./actions";
+
+/** The active save-as-rule prompt; anchorId=null anchors it above the table
+ *  (bulk edits). `key` remounts the prompt so each edit starts fresh. */
+type PromptState = {
+  key: number;
+  pattern: string;
+  category: string;
+  anchorId: string | null;
+};
 
 export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCat, setBulkCat] = useState("");
+  const [prompt, setPrompt] = useState<PromptState | null>(null);
 
   const allChecked = transactions.length > 0 && selected.size === transactions.length;
 
@@ -31,10 +43,14 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
     setSelected(allChecked ? new Set() : new Set(transactions.map((t) => t.id)));
   }
 
-  function onCategory(id: string, category: string) {
+  function onCategory(t: Transaction, category: string) {
     startTransition(async () => {
-      await updateCategory(id, category);
+      await updateCategory(t.id, category);
       router.refresh();
+      // The edit is saved either way; offer to make it a rule. A new edit
+      // replaces any prompt already open (only one visible at a time).
+      const pattern = cleanMerchantPattern(t.description);
+      setPrompt(pattern ? { key: Date.now(), pattern, category, anchorId: t.id } : null);
     });
   }
 
@@ -49,12 +65,37 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
   function applyBulk() {
     if (!bulkCat || selected.size === 0) return;
     const ids = [...selected];
+    const category = bulkCat;
+    // Offer a rule only when every selected row shares one cleaned pattern.
+    const patterns = new Set(
+      transactions.filter((t) => selected.has(t.id)).map((t) => cleanMerchantPattern(t.description)),
+    );
+    const shared = patterns.size === 1 ? [...patterns][0] : "";
     startTransition(async () => {
-      await bulkCategory(ids, bulkCat);
+      await bulkCategory(ids, category);
       setSelected(new Set());
       setBulkCat("");
       router.refresh();
+      setPrompt(shared ? { key: Date.now(), pattern: shared, category, anchorId: null } : null);
     });
+  }
+
+  /** Dismiss the prompt identified by `key` — a stale timer from a replaced
+   *  prompt must not close the one currently open. */
+  function dismissPrompt(key: number) {
+    setPrompt((p) => (p?.key === key ? null : p));
+  }
+
+  function renderPrompt(p: PromptState) {
+    return (
+      <RulePrompt
+        key={p.key}
+        initialPattern={p.pattern}
+        category={p.category}
+        onDismiss={() => dismissPrompt(p.key)}
+        onSaved={() => router.refresh()}
+      />
+    );
   }
 
   if (transactions.length === 0) {
@@ -63,6 +104,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
 
   return (
     <div className="flex flex-col gap-3">
+      {prompt && prompt.anchorId === null && renderPrompt(prompt)}
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/50 p-3">
           <span className="text-sm font-medium">{selected.size} selected</span>
@@ -102,7 +144,8 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
           </thead>
           <tbody>
             {transactions.map((t) => (
-              <tr key={t.id} className="border-b border-border/60 last:border-0">
+              <Fragment key={t.id}>
+              <tr className="border-b border-border/60 last:border-0">
                 <td className="py-2">
                   <input
                     type="checkbox"
@@ -125,7 +168,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
                   <div className="w-40">
                     <Select
                       value={t.category}
-                      onChange={(e) => onCategory(t.id, e.target.value)}
+                      onChange={(e) => onCategory(t, e.target.value)}
                       disabled={pending}
                     >
                       {ALL_CATEGORIES.map((c) => (
@@ -154,6 +197,15 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
                   {formatCurrency(t.amount)}
                 </td>
               </tr>
+              {prompt?.anchorId === t.id && (
+                <tr className="border-b border-border/60 last:border-0">
+                  <td />
+                  <td colSpan={6} className="py-2 pr-3">
+                    {renderPrompt(prompt)}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
