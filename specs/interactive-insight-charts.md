@@ -69,6 +69,16 @@ Two legacy charts were dropped in the hosted port and are now the biggest visual
 - Migrating existing Recharts charts (Monthly bars, spend trend) to ECharts.
 - Persisting sunburst zoom state across navigation.
 
+## Amendment 2026-08-04
+
+Shipped as specced, then adjusted at Sebi's request after live use: the
+merchant ring is **collapsed to a thin unlabeled outer sliver in the top-level
+view** (still hoverable, hinting there is more inside). ECharts sunburst
+`levels` are relative to the current zoom root, so clicking any wedge re-levels
+the view and the merchant detail expands to full-width rings. All data, totals,
+zoom behavior, and colors are unchanged — this is a per-level radius/label
+config only.
+
 ## Open questions
 
 - None blocking. If bundle size from `echarts/core` proves heavy in `next build` output, the wrapper's dynamic import already isolates it to the two pages; further trimming is an optimization, not a design change.
