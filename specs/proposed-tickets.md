@@ -55,8 +55,8 @@ _Test coverage, lint config, the start script, local-run ergonomics._
 _Legacy Flask features not yet reproduced in the Next.js port. See [`hosted-rewrite.md`](hosted-rewrite.md) / [ADR-004](../adr/004-hosted-multi-user-supabase.md)._
 
 - **Dashboard goals + rainy-day widgets** — the `goals` and `rainy_day_log` tables exist with RLS in `web/supabase/migrations/0001_init.sql`, but the Dashboard doesn't yet render the goal cards or rainy-day balance widget. Port CRUD + progress bars. Surfaced by: hosted rewrite PR7. 2026-07-22
-- **Budget Sankey diagram** — the Budget page shows an allocation summary (income → allocated → unallocated/over) instead of the legacy ECharts Sankey. Add a Sankey (recharts has one, or ECharts-react) once the planner is validated. Surfaced by: hosted rewrite PR9. 2026-07-22
-- **Expandable sunburst on Dashboard** — legacy had a click-to-expand 3-level sunburst with a detail panel; the port uses a category donut + breakdown table. Reintroduce the sunburst interaction if wanted. Surfaced by: hosted rewrite PR7. 2026-07-22
+- **Budget Sankey diagram** — promoted 2026-08-04 into the Open Work Queue as "Interactive insight charts"; spec at [`interactive-insight-charts.md`](interactive-insight-charts.md).
+- **Expandable sunburst on Dashboard** — promoted 2026-08-04 into the Open Work Queue as "Interactive insight charts"; spec at [`interactive-insight-charts.md`](interactive-insight-charts.md).
 - **"Save as rule" from a transaction edit** — promoted 2026-08-03 into the Open Work Queue as "Inline merchant-rule creation"; spec at [`rule-triage-flows.md`](rule-triage-flows.md).
 - **Migrate existing local budget.db into Supabase** — users currently start fresh by re-uploading CSVs. A one-time importer (read SQLite → insert under the user's id) would preserve manual categorizations/notes. Surfaced by: hosted rewrite. 2026-07-22
 - **Legacy Flask retirement** — once the hosted app is validated against real data, remove `app.py`/`database.py`/`templates/` etc. and collapse root docs to point at `web/`. Surfaced by: hosted rewrite. 2026-07-22
