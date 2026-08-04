@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { Select } from "@/components/ui/select";
@@ -12,14 +12,13 @@ import type { Transaction } from "@/lib/data/transactions";
 import { RulePrompt } from "@/components/app/rule-prompt";
 import { bulkCategory, updateCategory, updateNotes } from "./actions";
 
-/** The active save-as-rule prompt, anchored under row `anchorId` (rendered
- *  above the table if that row isn't in the current list, or anchorId is
- *  null). `key` remounts the prompt so each edit starts fresh. */
+/** The active save-as-rule prompt, shown in a floating panel pinned to the
+ *  bottom of the viewport — filters and refreshes can't dislodge it. `key`
+ *  remounts the prompt so each edit starts fresh. */
 type PromptState = {
   key: number;
   pattern: string;
   category: string;
-  anchorId: string | null;
 };
 
 export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
@@ -28,14 +27,6 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCat, setBulkCat] = useState("");
   const [prompt, setPrompt] = useState<PromptState | null>(null);
-  // Optimistic category overrides for rows edited while a prompt is open —
-  // the server refresh is deferred until the prompt closes (see onCategory),
-  // so the <Select> needs the new value from here in the meantime.
-  const [edited, setEdited] = useState<Record<string, string>>({});
-  const promptRef = useRef<PromptState | null>(null);
-  useEffect(() => {
-    promptRef.current = prompt;
-  }, [prompt]);
 
   const allChecked = transactions.length > 0 && selected.size === transactions.length;
 
@@ -55,18 +46,13 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
   function onCategory(t: Transaction, category: string) {
     startTransition(async () => {
       await updateCategory(t.id, category);
+      router.refresh();
+      // The edit is saved either way; offer to make it a rule. The prompt
+      // floats above the viewport, so the row filtering itself out of the
+      // list on refresh doesn't disturb it. A new edit replaces any prompt
+      // already open (only one at a time).
       const pattern = cleanMerchantPattern(t.description);
-      if (!pattern) {
-        setPrompt(null);
-        router.refresh();
-        return;
-      }
-      // Don't refresh yet: with a category filter active, refreshing would
-      // drop this row from the list and yank the prompt away from it. Show
-      // the new category optimistically and sync when the prompt closes.
-      // A new edit replaces any prompt already open (only one at a time).
-      setEdited((prev) => ({ ...prev, [t.id]: category }));
-      setPrompt({ key: Date.now(), pattern, category, anchorId: t.id });
+      setPrompt(pattern ? { key: Date.now(), pattern, category } : null);
     });
   }
 
@@ -87,61 +73,42 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
       transactions.filter((t) => selected.has(t.id)).map((t) => cleanMerchantPattern(t.description)),
     );
     const shared = patterns.size === 1 ? [...patterns][0] : "";
-    // Anchor the prompt under the first selected row in display order.
-    const anchorId = transactions.find((t) => selected.has(t.id))?.id ?? null;
     startTransition(async () => {
       await bulkCategory(ids, category);
       setSelected(new Set());
       setBulkCat("");
-      if (!shared) {
-        setPrompt(null);
-        router.refresh();
-        return;
-      }
-      // Same deferral as onCategory: keep the edited rows in place under the
-      // active filters until the prompt closes.
-      setEdited((prev) => {
-        const next = { ...prev };
-        for (const id of ids) next[id] = category;
-        return next;
-      });
-      setPrompt({ key: Date.now(), pattern: shared, category, anchorId });
+      router.refresh();
+      setPrompt(shared ? { key: Date.now(), pattern: shared, category } : null);
     });
   }
 
-  /** Close the prompt identified by `key` and run the deferred refresh. A
-   *  stale confirmation timer from a replaced prompt must do neither. */
+  /** Dismiss the prompt identified by `key` — a stale confirmation timer from
+   *  a replaced prompt must not close the one currently open. */
   function dismissPrompt(key: number) {
-    if (promptRef.current?.key !== key) return;
-    promptRef.current = null;
-    setPrompt(null);
-    setEdited({});
-    router.refresh();
+    setPrompt((p) => (p?.key === key ? null : p));
   }
 
-  function renderPrompt(p: PromptState) {
-    return (
-      <RulePrompt
-        key={p.key}
-        initialPattern={p.pattern}
-        category={p.category}
-        onDismiss={() => dismissPrompt(p.key)}
-      />
-    );
-  }
-
-  // A category edit can push its own row out of the active filters (e.g.
-  // filtering on 'Other' and fixing a row): the refreshed list no longer
-  // contains the anchor row. Re-anchor the prompt above the table instead of
-  // losing it — the rule flow must survive its own side effects.
-  const promptAtTop =
-    prompt !== null &&
-    (prompt.anchorId === null || !transactions.some((t) => t.id === prompt.anchorId));
+  // Floating, non-blocking panel pinned to the bottom of the viewport: it
+  // stays put while the list scrolls or re-filters (the edit that opened it
+  // often removes its own row from the filtered results).
+  const promptOverlay = prompt && (
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+      <div className="pointer-events-auto w-full max-w-2xl" role="dialog" aria-label="Save as rule">
+        <RulePrompt
+          key={prompt.key}
+          initialPattern={prompt.pattern}
+          category={prompt.category}
+          onDismiss={() => dismissPrompt(prompt.key)}
+          onSaved={() => router.refresh()}
+        />
+      </div>
+    </div>
+  );
 
   if (transactions.length === 0) {
     return (
       <div className="flex flex-col gap-3">
-        {prompt && renderPrompt(prompt)}
+        {promptOverlay}
         <p className="py-10 text-center text-sm text-muted-foreground">No transactions match these filters.</p>
       </div>
     );
@@ -149,7 +116,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
 
   return (
     <div className="flex flex-col gap-3">
-      {promptAtTop && prompt && renderPrompt(prompt)}
+      {promptOverlay}
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/50 p-3">
           <span className="text-sm font-medium">{selected.size} selected</span>
@@ -189,8 +156,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
           </thead>
           <tbody>
             {transactions.map((t) => (
-              <Fragment key={t.id}>
-              <tr className="border-b border-border/60 last:border-0">
+              <tr key={t.id} className="border-b border-border/60 last:border-0">
                 <td className="py-2">
                   <input
                     type="checkbox"
@@ -212,7 +178,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
                 <td className="py-2 pr-3">
                   <div className="w-40">
                     <Select
-                      value={edited[t.id] ?? t.category}
+                      value={t.category}
                       onChange={(e) => onCategory(t, e.target.value)}
                       disabled={pending}
                     >
@@ -242,15 +208,6 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
                   {formatCurrency(t.amount)}
                 </td>
               </tr>
-              {prompt?.anchorId === t.id && (
-                <tr className="border-b border-border/60 last:border-0">
-                  <td />
-                  <td colSpan={6} className="py-2 pr-3">
-                    {renderPrompt(prompt)}
-                  </td>
-                </tr>
-              )}
-              </Fragment>
             ))}
           </tbody>
         </table>

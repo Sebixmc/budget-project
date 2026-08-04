@@ -13,18 +13,19 @@ import { countRuleMatches, createRuleAndApply } from "@/app/(app)/rules/actions"
  * (editable) and a live count of the other auto-categorized rows the rule
  * would fix. Saving upserts the rule and recategorizes matching auto rows
  * only; any dismissal makes no changes beyond the already-saved edit
- * (specs/rule-triage-flows.md). The parent defers its list refresh until
- * `onDismiss` fires, so the anchor row stays in place while the prompt is
- * open — even when the edit no longer matches the active filters.
+ * (specs/rule-triage-flows.md). Rendered as a floating panel pinned to the
+ * viewport by the transactions table, so list refreshes can't dislodge it.
  */
 export function RulePrompt({
   initialPattern,
   category,
   onDismiss,
+  onSaved,
 }: {
   initialPattern: string;
   category: string;
   onDismiss: () => void;
+  onSaved?: () => void;
 }) {
   const [pattern, setPattern] = useState(initialPattern);
   const [count, setCount] = useState<number | null>(null);
@@ -63,13 +64,14 @@ export function RulePrompt({
         return;
       }
       setSaved(res.updated);
+      onSaved?.();
       setTimeout(onDismiss, 1800);
     });
   }
 
   if (saved !== null) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-positive">
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-positive shadow-lg">
         <CheckCircle2 className="size-4" />
         Rule saved — {saved} transaction{saved === 1 ? "" : "s"} recategorized as {category}.
       </div>
@@ -77,7 +79,7 @@ export function RulePrompt({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-lg">
       <Wand2 className="size-4 shrink-0 text-muted-foreground" />
       <span className="whitespace-nowrap">Always file</span>
       <Input
