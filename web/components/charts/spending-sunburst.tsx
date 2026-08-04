@@ -64,6 +64,16 @@ export function SpendingSunburst({ rows }: { rows: SunburstRow[] }) {
             overflow: "truncate",
             width: 76,
           },
+          // Levels are relative to the current zoom root: at the top view the
+          // merchant ring collapses to a thin unlabeled sliver (a "there's
+          // more inside" hint — still hoverable); clicking a wedge zooms and
+          // re-levels the view, so the detail expands to full rings.
+          levels: [
+            {}, // the center circle (back button when zoomed)
+            { r0: 28, r: "46%" },
+            { r0: "46%", r: "87%" },
+            { r0: "87%", r: "92%", label: { show: false } },
+          ],
         },
       ],
     };
