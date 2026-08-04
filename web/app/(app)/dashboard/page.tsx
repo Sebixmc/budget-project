@@ -1,22 +1,27 @@
 import Link from "next/link";
 import { Upload } from "lucide-react";
 import { getAccounts } from "@/lib/data/accounts";
-import { getInsights } from "@/lib/data/insights";
+import { getInsights, getSunburstRows } from "@/lib/data/insights";
 import { PageHeader } from "@/components/app/page-header";
 import { KpiCard } from "@/components/app/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SpendBarChart, CategoryDonut } from "@/components/charts/insight-charts";
+import { SpendBarChart } from "@/components/charts/insight-charts";
+import { SpendingSunburst } from "@/components/charts/spending-sunburst";
 import { formatCurrency } from "@/lib/utils";
 
 type SearchParams = Promise<{ month?: string; account?: string }>;
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const accounts = await getAccounts();
-  const insights = await getInsights({ month: sp.month || undefined, accountId: sp.account || undefined });
+  const scope = { month: sp.month || undefined, accountId: sp.account || undefined };
+  const [accounts, insights, sunburstRows] = await Promise.all([
+    getAccounts(),
+    getInsights(scope),
+    getSunburstRows(scope),
+  ]);
   const empty = insights.txCount === 0 && insights.monthlyTotals.length === 0;
 
   return (
@@ -75,7 +80,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                 <CardTitle>By category</CardTitle>
               </CardHeader>
               <CardContent>
-                <CategoryDonut data={insights.byCategory} />
+                <SpendingSunburst rows={sunburstRows} />
               </CardContent>
             </Card>
           </section>

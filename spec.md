@@ -341,7 +341,7 @@ Pick up `[UNTOUCHED]` items in priority order. Add new items as `[UNTOUCHED]` if
 
 ### Medium priority
 
-- [ ] **Interactive insight charts — drill-down sunburst (Dashboard) + budget Sankey (Budget)** — restore the two legacy ECharts visualizations dropped in the port: a three-ring sunburst (flow → category → merchant) with click-to-zoom and center-click zoom-out, and the income→allocation Sankey with an Unallocated/over-budget indicator. One new dependency (`echarts`, tree-shaken) serves both. Spec: [`specs/interactive-insight-charts.md`](specs/interactive-insight-charts.md). `[UNTOUCHED — spec ready 2026-08-04]`
+- [ ] **Interactive insight charts — drill-down sunburst (Dashboard) + budget Sankey (Budget)** — restore the two legacy ECharts visualizations dropped in the port: a three-ring sunburst (flow → category → merchant) with click-to-zoom and center-click zoom-out, and the income→allocation Sankey with an Unallocated/over-budget indicator. One new dependency (`echarts`, tree-shaken) serves both. Spec: [`specs/interactive-insight-charts.md`](specs/interactive-insight-charts.md). `[IN PROGRESS — 2026-08-04: implementation started by devcontainer agent]`
 
 - [ ] **Manual transaction entry** — let the user add a cash purchase or anything not in a CSV. Probably a button on the Transactions tab that opens a small form (date, description, amount, flow, category, account, optional notes). `[UNTOUCHED]`
 - [ ] **Delete transaction** — let the user remove a bad import (per-row × button or bulk-delete in the same flow as bulk-category). `[UNTOUCHED]`
