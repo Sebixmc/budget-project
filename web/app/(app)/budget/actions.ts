@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { TaxLine } from "@/lib/budget-math";
+import { sumIncomeSources, type IncomeSource, type TaxLine } from "@/lib/budget-math";
 
 type ActionResult = { ok: boolean; error?: string };
 
@@ -30,18 +30,39 @@ function validateTaxLines(input: unknown): TaxLine[] | null {
   return lines;
 }
 
-/** Save the cascade profile: gross yearly income + itemized tax estimate.
- *  Rejects invalid input without persisting (spec EARS). */
-export async function saveProfile(grossAnnual: number, taxLines: TaxLine[]): Promise<ActionResult> {
-  if (!validAmount(grossAnnual)) return { ok: false, error: "Gross income must be a non-negative amount." };
+/** Strictly validate income sources; null when malformed. */
+function validateIncomeSources(input: unknown): IncomeSource[] | null {
+  if (!Array.isArray(input) || input.length > 20) return null;
+  const sources: IncomeSource[] = [];
+  for (const raw of input) {
+    if (typeof raw !== "object" || raw === null) return null;
+    const { name, amount } = raw as Record<string, unknown>;
+    if (typeof name !== "string" || name.trim().length === 0 || name.length > 80) return null;
+    if (!validAmount(amount)) return null;
+    sources.push({ name: name.trim(), amount });
+  }
+  return sources;
+}
+
+/** Save the cascade profile: itemized yearly income sources + tax estimate.
+ *  gross_annual is stored as the sources' sum so existing readers (cascade,
+ *  Sankey) keep working. Rejects invalid input without persisting. */
+export async function saveProfile(
+  incomeSources: IncomeSource[],
+  taxLines: TaxLine[],
+): Promise<ActionResult> {
+  const sources = validateIncomeSources(incomeSources);
+  if (!sources) return { ok: false, error: "Income sources are malformed." };
   const lines = validateTaxLines(taxLines);
   if (!lines) return { ok: false, error: "Tax lines are malformed." };
+  const gross = sumIncomeSources(sources);
+  if (!validAmount(gross)) return { ok: false, error: "Combined gross income is out of range." };
 
   const supabase = await createClient();
   const { error } = await supabase
     .from("budget_profile")
     .upsert(
-      { gross_annual: Math.round(grossAnnual * 100) / 100, tax_lines: lines },
+      { gross_annual: gross, tax_lines: lines, income_sources: sources },
       { onConflict: "user_id" },
     );
   revalidatePath("/budget");

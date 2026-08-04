@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getCategoryAverages } from "@/lib/data/insights";
-import type { TaxLine } from "@/lib/budget-math";
+import type { IncomeSource, TaxLine } from "@/lib/budget-math";
 
 export type BudgetCategory = {
   category: string;
@@ -12,6 +12,7 @@ export type BudgetCategory = {
 export type BudgetProfile = {
   gross_annual: number;
   tax_lines: TaxLine[];
+  income_sources: IncomeSource[];
 };
 
 export type SavingsGoal = {
@@ -43,6 +44,19 @@ function parseTaxLines(raw: unknown): TaxLine[] {
   return lines;
 }
 
+/** Coerce a jsonb value into well-formed income sources; malformed → []. */
+function parseIncomeSources(raw: unknown): IncomeSource[] {
+  if (!Array.isArray(raw)) return [];
+  const sources: IncomeSource[] = [];
+  for (const s of raw) {
+    const { name, amount } = (s ?? {}) as Record<string, unknown>;
+    if (typeof name !== "string") return [];
+    if (typeof amount !== "number" || !Number.isFinite(amount)) return [];
+    sources.push({ name, amount });
+  }
+  return sources;
+}
+
 export async function getBudget(): Promise<BudgetData> {
   const supabase = await createClient();
 
@@ -51,7 +65,9 @@ export async function getBudget(): Promise<BudgetData> {
       supabase.from("budget_categories").select("category, monthly_limit, flow_type").order("category"),
       supabase.from("budget_income").select("monthly_estimate").maybeSingle(),
       getCategoryAverages(),
-      supabase.from("budget_profile").select("gross_annual, tax_lines").maybeSingle(),
+      // `*` so the row still loads when migration 0005 (income_sources) has
+      // not been applied yet — the missing column just parses to [].
+      supabase.from("budget_profile").select("*").maybeSingle(),
       supabase
         .from("savings_goals")
         .select("id, name, monthly_amount")
@@ -68,12 +84,22 @@ export async function getBudget(): Promise<BudgetData> {
 
   // Before migration 0003 is applied these selects error and return null —
   // profile stays null and the page falls back to pre-cascade behavior.
-  const profile = profileRow
-    ? {
-        gross_annual: Number((profileRow as { gross_annual: string | number }).gross_annual),
-        tax_lines: parseTaxLines((profileRow as { tax_lines: unknown }).tax_lines),
-      }
-    : null;
+  let profile: BudgetProfile | null = null;
+  if (profileRow) {
+    const row = profileRow as {
+      gross_annual: string | number;
+      tax_lines: unknown;
+      income_sources?: unknown;
+    };
+    const gross = Number(row.gross_annual);
+    const sources = parseIncomeSources(row.income_sources);
+    profile = {
+      gross_annual: gross,
+      tax_lines: parseTaxLines(row.tax_lines),
+      // Profiles saved before itemized sources existed become one line.
+      income_sources: sources.length > 0 ? sources : gross > 0 ? [{ name: "Salary", amount: gross }] : [],
+    };
+  }
 
   const goals = (goalRows ?? []).map((g) => {
     const row = g as unknown as { id: string; name: string; monthly_amount: string | number };

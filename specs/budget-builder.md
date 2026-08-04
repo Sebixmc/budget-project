@@ -62,6 +62,26 @@ The Budget page becomes one vertical flow (single column on mobile). Section lab
 - `web/app/(app)/budget/page.tsx` — wire profile/goals into Sankey + builder
 - `web/lib/charts/sankey-data.ts` + test — income source priority + goal branches
 
+## Amendment 2026-08-04
+
+Two changes at Sebi's request after live use:
+
+1. **Itemized income sources.** The single gross-income input becomes a list
+   of yearly sources (name + amount, add/remove — e.g. salary + side income),
+   stored as `budget_profile.income_sources` jsonb (migration
+   `0005_income_sources.sql`, additive; 0004 was taken by user_settings in
+   parallel work). Taxes apply to the combined gross. `gross_annual` remains
+   and the server action keeps it equal to the sources' sum, so the cascade
+   math, Sankey, and every existing reader are unchanged. Profiles saved
+   before 0005 surface as a single "Salary" source. `saveProfile` now takes
+   `(incomeSources, taxLines)` and validates source shape/names/amounts.
+2. **The yearly-facts cards auto-save on blur** (and immediately on
+   add/remove/kind changes). The explicit button remains as "Done"
+   (save + collapse), but edits are no longer lost if the user navigates away
+   without clicking it — this was misread as the value "not persisting
+   between sessions"; persistence was always server-side, the button was the
+   missing step.
+
 ## Out of scope
 
 - Linking savings goals to the dormant `goals` table (targets/progress) — future feature.

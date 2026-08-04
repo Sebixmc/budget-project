@@ -16,6 +16,18 @@ export type TaxLine = {
   value: number;
 };
 
+/** One yearly income source (salary, side income, …). */
+export type IncomeSource = {
+  name: string;
+  /** YEARLY amount. */
+  amount: number;
+};
+
+/** Combined yearly gross across sources, exact to the cent. */
+export function sumIncomeSources(sources: IncomeSource[]): number {
+  return fromCents(sources.reduce((sum, s) => sum + toCents(s.amount), 0));
+}
+
 export type CascadeInput = {
   grossAnnual: number;
   taxLines: TaxLine[];
