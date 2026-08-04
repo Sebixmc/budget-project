@@ -82,6 +82,14 @@ Implemented as specced, with three small deviations:
   no new server action.
 - **Rule-matching `ilike` escapes LIKE wildcards** (`%`, `_`, `\`) so a pattern
   matches as a literal substring, exactly like the categorizer's `includes()`.
+- **The rule prompt floats instead of living under the row** (changed
+  2026-08-04, at Sebi's request after live use). Spec §6 placed the prompt
+  "directly under that row", but the common workflow — filter on `Other`, fix
+  rows one by one — removes the edited row from the filtered list on refresh,
+  leaving the prompt nowhere stable to sit. It now renders as a non-blocking
+  panel pinned bottom-center of the viewport, unaffected by list refreshes,
+  filters, or scrolling; single and bulk edits share it. All other prompt
+  behavior (dismissal semantics, live count, one-at-a-time) is as specced.
 
 Verification: Vitest covers `cleanMerchantPattern` + `groupByMerchant`
 (31 tests green) and lint/typecheck/`next build` pass. The manual browser
