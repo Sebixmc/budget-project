@@ -98,13 +98,26 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
     );
   }
 
+  // A category edit can push its own row out of the active filters (e.g.
+  // filtering on 'Other' and fixing a row): the refreshed list no longer
+  // contains the anchor row. Re-anchor the prompt above the table instead of
+  // losing it — the rule flow must survive its own side effects.
+  const promptAtTop =
+    prompt !== null &&
+    (prompt.anchorId === null || !transactions.some((t) => t.id === prompt.anchorId));
+
   if (transactions.length === 0) {
-    return <p className="py-10 text-center text-sm text-muted-foreground">No transactions match these filters.</p>;
+    return (
+      <div className="flex flex-col gap-3">
+        {prompt && renderPrompt(prompt)}
+        <p className="py-10 text-center text-sm text-muted-foreground">No transactions match these filters.</p>
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {prompt && prompt.anchorId === null && renderPrompt(prompt)}
+      {promptAtTop && prompt && renderPrompt(prompt)}
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/50 p-3">
           <span className="text-sm font-medium">{selected.size} selected</span>
