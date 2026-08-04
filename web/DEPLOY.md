@@ -30,23 +30,17 @@ and import into Vercel. Everything else is copy/paste.
    - **Redirect URLs** (allow-list), add both:
      - `http://localhost:3000/**`
      - `https://*.vercel.app/**` (tighten to your real domain later)
-   - Email provider is on by default → magic links work immediately. Supabase's built-in email
-     is rate-limited; add custom SMTP later for volume.
+   - The app signs in with **email + password** (no emails involved in day-to-day auth).
 
-5. **Fix the email templates (required)** — **Authentication → Emails**. The app's
-   `/auth/confirm` route verifies a `token_hash` server-side; Supabase's **default templates
-   don't send one**, so every link would land on `/login?error=link`. In **both** the
-   "Confirm signup" and "Magic Link" templates, replace the link's `{{ .ConfirmationURL }}`
-   href with:
+5. **Disable email confirmation (required)** — **Authentication → Sign In / Providers →
+   Email** → turn **"Confirm email" OFF**. With it on, sign-up waits on a confirmation
+   email — reintroducing the email dependency (rate-limited built-in sender, template
+   quirks) that password auth exists to avoid. With it off, creating an account signs you
+   in immediately. For a two-person household app the trade-off is right; revisit if the
+   app ever opens to strangers.
 
-   ```
-   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email
-   ```
-
-   Tip: give both templates the same subject/body (e.g. "Sign in to Ledger") — first-time and
-   returning sign-ins send different templates, and identical copy avoids "verify vs sign in"
-   confusion. `{{ .SiteURL }}` follows the Site URL setting, so links point at production
-   automatically once you update it in Phase 3.
+   > Password resets: with no SMTP configured, a forgotten password is reset by the admin
+   > in **Authentication → Users** (⋯ → Reset password / Delete user). Fine at this scale.
 
 ---
 
@@ -63,7 +57,7 @@ npm install
 npm run dev            # http://localhost:3000
 ```
 
-Sign in with your email → open the magic link → you should land on the dashboard with four
+Create an account (email + password) → you should land on the dashboard with four
 seeded accounts. Try an Upload with a real CSV.
 
 ---

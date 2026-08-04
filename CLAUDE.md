@@ -15,7 +15,7 @@ Family Budget App is a **hosted, multi-user** web app for a household (Sebi & Ol
 **Target stack (the hosted app, in [`web/`](web/)):**
 
 - **Next.js (App Router) + TypeScript** — deployed on **Vercel**. Server Components + Route Handlers / Server Actions for data access; the Supabase `service_role` key is used **only** in server-side code.
-- **Supabase** — managed **Postgres** (data), **Auth** (passwordless magic-link / OAuth), and **Storage**. All schema lives in `web/supabase/migrations/` as SQL migrations; **every table has `user_id` + RLS**.
+- **Supabase** — managed **Postgres** (data), **Auth** (email + password; magic links were dropped 2026-08-03 for sign-in reliability), and **Storage**. All schema lives in `web/supabase/migrations/` as SQL migrations; **every table has `user_id` + RLS**.
 - **Tailwind CSS** + a **first-party design system** (design tokens + reusable UI primitives in `web/components/ui/`). Charts via a React charting lib (ECharts/Recharts). Real build step, `package.json`, `node_modules`.
 - **Pure, testable logic** — CSV parsing and categorization are ported to framework-free TypeScript modules (`web/lib/parser.ts`, `web/lib/categorizer.ts`) so they unit-test directly, just like the Python originals.
 - **Vitest** for tests, **ESLint + Prettier** (or Biome) for lint/format, **`tsc --noEmit`** for typecheck.

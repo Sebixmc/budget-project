@@ -2,35 +2,71 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { MailCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+type Mode = "signin" | "signup";
+
+/** Map Supabase auth errors to friendlier copy. */
+function friendlyError(raw: string, mode: Mode): string {
+  if (/invalid login credentials/i.test(raw)) {
+    return mode === "signin"
+      ? "Wrong email or password."
+      : "Could not create the account. Try again.";
+  }
+  if (/already registered/i.test(raw)) {
+    return "That email already has an account — sign in instead.";
+  }
+  return raw;
+}
+
 export default function LoginPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState<"idle" | "working" | "confirm-sent" | "error">("idle");
   const [message, setMessage] = useState("");
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setStatus("sending");
+    setStatus("working");
     setMessage("");
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/confirm?next=/dashboard`,
-        },
-      });
-      if (error) throw error;
-      setStatus("sent");
+      if (mode === "signin") {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        router.push("/dashboard");
+        router.refresh();
+      } else {
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        if (data.session) {
+          // Email confirmation is disabled → signed in immediately.
+          router.push("/dashboard");
+          router.refresh();
+        } else {
+          // Confirmation still enabled in Supabase; fall back gracefully.
+          setStatus("confirm-sent");
+        }
+      }
     } catch (err) {
       setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Something went wrong. Try again.");
+      setMessage(
+        friendlyError(err instanceof Error ? err.message : "Something went wrong. Try again.", mode),
+      );
     }
+  }
+
+  function switchMode() {
+    setMode(mode === "signin" ? "signup" : "signin");
+    setStatus("idle");
+    setMessage("");
   }
 
   return (
@@ -43,20 +79,23 @@ export default function LoginPage() {
             </span>
             Ledger
           </Link>
-          <CardTitle>Sign in</CardTitle>
+          <CardTitle>{mode === "signin" ? "Sign in" : "Create account"}</CardTitle>
           <CardDescription>
-            We&apos;ll email you a magic link — no password to remember.
+            {mode === "signin"
+              ? "Welcome back — enter your email and password."
+              : "Pick a password of at least 8 characters."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {status === "sent" ? (
+          {status === "confirm-sent" ? (
             <div className="flex flex-col items-center gap-3 py-4 text-center">
-              <CheckCircle2 className="size-8 text-positive" />
+              <MailCheck className="size-8 text-positive" />
               <p className="text-sm">
-                Check <span className="font-medium">{email}</span> for a sign-in link.
+                Check <span className="font-medium">{email}</span> to confirm your account, then
+                sign in.
               </p>
-              <Button variant="ghost" size="sm" onClick={() => setStatus("idle")}>
-                Use a different email
+              <Button variant="ghost" size="sm" onClick={switchMode}>
+                Back to sign in
               </Button>
             </div>
           ) : (
@@ -69,12 +108,41 @@ export default function LoginPage() {
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={status === "sending"}
+                disabled={status === "working"}
               />
-              <Button type="submit" className="w-full" disabled={status === "sending" || !email}>
-                {status === "sending" ? "Sending…" : "Email me a link"}
+              <Input
+                type="password"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                required
+                minLength={mode === "signup" ? 8 : undefined}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={status === "working"}
+              />
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={status === "working" || !email || !password}
+              >
+                {status === "working"
+                  ? mode === "signin"
+                    ? "Signing in…"
+                    : "Creating account…"
+                  : mode === "signin"
+                    ? "Sign in"
+                    : "Create account"}
               </Button>
               {status === "error" && <p className="text-sm text-negative">{message}</p>}
+              <button
+                type="button"
+                onClick={switchMode}
+                className="mt-1 text-sm text-muted-foreground underline-offset-4 hover:underline"
+              >
+                {mode === "signin"
+                  ? "New here? Create an account"
+                  : "Already have an account? Sign in"}
+              </button>
             </form>
           )}
         </CardContent>
