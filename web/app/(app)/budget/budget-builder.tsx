@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,8 +11,10 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { ALL_CATEGORIES } from "@/lib/categorizer";
 import {
   computeCascade,
+  sumIncomeSources,
   taxLineYearly,
   DEFAULT_TAX_LINES,
+  type IncomeSource,
   type TaxLine,
 } from "@/lib/budget-math";
 import type { BudgetData } from "@/lib/data/budget";
@@ -43,12 +45,17 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
   const hasProfile = data.profile !== null;
 
   // ---- local, live-editable copies (persisted via server actions) ----------
-  const [grossStr, setGrossStr] = useState(() =>
-    data.profile && data.profile.gross_annual > 0 ? String(data.profile.gross_annual) : "",
+  const [incomeSources, setIncomeSources] = useState<IncomeSource[]>(() =>
+    data.profile && data.profile.income_sources.length > 0
+      ? data.profile.income_sources
+      : [{ name: "Salary", amount: 0 }],
   );
   const [taxLines, setTaxLines] = useState<TaxLine[]>(() =>
     data.profile && data.profile.tax_lines.length > 0 ? data.profile.tax_lines : DEFAULT_TAX_LINES,
   );
+  // The yearly-facts cards persist automatically on blur (no lost edits if
+  // the user never clicks Save); this tracks whether anything changed.
+  const profileDirty = useRef(false);
   const [goalEdits, setGoalEdits] = useState<Record<string, { name?: string; amount?: number }>>({});
   // Per-goal input unit: type a yearly target and it's ÷12 into the stored
   // monthly commitment. `raw` preserves the typed yearly figure so it doesn't
@@ -77,7 +84,7 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
   }
 
   // ---- merged values + live math -------------------------------------------
-  const gross = Number(grossStr || 0);
+  const gross = sumIncomeSources(incomeSources);
   const goals = data.goals.map((g) => ({
     ...g,
     name: goalEdits[g.id]?.name ?? g.name,
@@ -120,46 +127,116 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
   const leftToAllocate = round2(leftToSpend - cascade.allocated);
   const budgetedCount = envelopeCats.filter((c) => limitOf(c) > 0).length;
 
-  function saveProfileNow() {
+  /** Persist the profile. Rows without a name are dropped; explicit values
+   *  may be passed so add/remove clicks can save without waiting for state. */
+  function commitProfile(opts: {
+    collapse?: boolean;
+    sources?: IncomeSource[];
+    lines?: TaxLine[];
+  } = {}) {
     setSaveError(null);
+    profileDirty.current = false;
+    const sources = (opts.sources ?? incomeSources).filter((s) => s.name.trim() !== "");
+    const lines = (opts.lines ?? taxLines).filter((l) => l.name.trim() !== "");
     persist(async () => {
-      const lines = taxLines.filter((l) => l.name.trim() !== "");
-      const res = await saveProfile(gross, lines);
+      const res = await saveProfile(sources, lines);
       if (!res.ok) {
         setSaveError(res.error ?? "Could not save.");
         return;
       }
-      setExpanded((e) => ({ ...e, gross: false, taxes: false }));
+      if (opts.collapse) setExpanded((e) => ({ ...e, gross: false, taxes: false }));
     });
+  }
+
+  /** Blur handler for the yearly-facts inputs — auto-saves pending edits. */
+  function autoSaveProfile() {
+    if (profileDirty.current) commitProfile();
   }
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
       <SectionLabel>Yearly — the facts</SectionLabel>
 
-      {/* ---- 1 · Gross income ---- */}
+      {/* ---- 1 · Gross income (itemized sources, auto-saved on blur) ---- */}
       <StageCard
         title="Gross income"
         expanded={expanded.gross}
         onToggle={() => toggle("gross")}
-        summary={gross > 0 ? `${formatCurrency(gross, { cents: false })} / yr` : "not set"}
+        summary={
+          gross > 0
+            ? incomeSources.length > 1
+              ? `${incomeSources.length} sources · ${formatCurrency(gross, { cents: false })} / yr`
+              : `${formatCurrency(gross, { cents: false })} / yr`
+            : "not set"
+        }
       >
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Yearly salary, before taxes</span>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              value={grossStr}
-              placeholder="85000"
-              onChange={(e) => setGrossStr(e.target.value)}
-              className="tabular w-44"
-            />
-          </label>
-          <Button size="sm" onClick={saveProfileNow}>
-            Save
-          </Button>
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">
+            Yearly amounts, before taxes. Saved automatically as you edit.
+          </p>
+          {incomeSources.map((source, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2">
+              <Input
+                value={source.name}
+                aria-label="Income source name"
+                placeholder="e.g. Salary"
+                onChange={(e) => {
+                  profileDirty.current = true;
+                  setIncomeSources((ss) => patchSource(ss, i, { name: e.target.value }));
+                }}
+                onBlur={autoSaveProfile}
+                className="h-8 w-40 text-sm"
+              />
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={source.amount || ""}
+                placeholder="85000"
+                aria-label={`${source.name || "income source"} yearly amount`}
+                onChange={(e) => {
+                  profileDirty.current = true;
+                  setIncomeSources((ss) =>
+                    patchSource(ss, i, { amount: Number(e.target.value || 0) }),
+                  );
+                }}
+                onBlur={autoSaveProfile}
+                className="tabular h-8 w-32 text-sm"
+              />
+              <span className="text-xs text-muted-foreground">/ yr</span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={`Remove ${source.name || "income source"}`}
+                className="ml-auto"
+                disabled={incomeSources.length === 1}
+                onClick={() => {
+                  const next = incomeSources.filter((_, j) => j !== i);
+                  setIncomeSources(next);
+                  commitProfile({ sources: next });
+                }}
+              >
+                <X />
+              </Button>
+            </div>
+          ))}
+          <div className="flex items-center justify-between border-t border-border pt-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setIncomeSources((ss) => [...ss, { name: "", amount: 0 }])}
+            >
+              <Plus /> Add income
+            </Button>
+            {incomeSources.length > 1 && (
+              <p className="text-sm">
+                Total gross <span className="tabular font-semibold">{formatCurrency(gross)}</span>
+              </p>
+            )}
+          </div>
+          {saveError && <p className="text-xs text-negative">{saveError}</p>}
         </div>
       </StageCard>
 
@@ -181,7 +258,11 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
                 value={line.name}
                 aria-label="Tax line name"
                 placeholder="Name"
-                onChange={(e) => setTaxLines((ls) => patch(ls, i, { name: e.target.value }))}
+                onChange={(e) => {
+                  profileDirty.current = true;
+                  setTaxLines((ls) => patch(ls, i, { name: e.target.value }));
+                }}
+                onBlur={autoSaveProfile}
                 className="h-8 w-36 text-sm"
               />
               <Input
@@ -191,17 +272,21 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
                 value={line.value || ""}
                 aria-label="Tax line value"
                 placeholder="0"
-                onChange={(e) =>
-                  setTaxLines((ls) => patch(ls, i, { value: Number(e.target.value || 0) }))
-                }
+                onChange={(e) => {
+                  profileDirty.current = true;
+                  setTaxLines((ls) => patch(ls, i, { value: Number(e.target.value || 0) }));
+                }}
+                onBlur={autoSaveProfile}
                 className="tabular h-8 w-24 text-sm"
               />
               <Select
                 value={line.kind}
                 aria-label="Tax line kind"
-                onChange={(e) =>
-                  setTaxLines((ls) => patch(ls, i, { kind: e.target.value as TaxLine["kind"] }))
-                }
+                onChange={(e) => {
+                  const next = patch(taxLines, i, { kind: e.target.value as TaxLine["kind"] });
+                  setTaxLines(next);
+                  commitProfile({ lines: next });
+                }}
                 className="h-8 w-24 text-sm"
               >
                 <option value="percent">%</option>
@@ -215,7 +300,11 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
                 size="icon"
                 variant="ghost"
                 aria-label={`Remove ${line.name || "tax line"}`}
-                onClick={() => setTaxLines((ls) => ls.filter((_, j) => j !== i))}
+                onClick={() => {
+                  const next = taxLines.filter((_, j) => j !== i);
+                  setTaxLines(next);
+                  commitProfile({ lines: next });
+                }}
               >
                 <X />
               </Button>
@@ -236,9 +325,10 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Button size="sm" onClick={saveProfileNow}>
-              Save
+            <Button size="sm" onClick={() => commitProfile({ collapse: true })}>
+              Done
             </Button>
+            <p className="text-xs text-muted-foreground">Changes save automatically.</p>
             {saveError && <p className="text-xs text-negative">{saveError}</p>}
           </div>
         </div>
@@ -548,4 +638,12 @@ function taxLineShort(l: TaxLine): string {
 
 function patch(lines: TaxLine[], i: number, change: Partial<TaxLine>): TaxLine[] {
   return lines.map((l, j) => (j === i ? { ...l, ...change } : l));
+}
+
+function patchSource(
+  sources: IncomeSource[],
+  i: number,
+  change: Partial<IncomeSource>,
+): IncomeSource[] {
+  return sources.map((s, j) => (j === i ? { ...s, ...change } : s));
 }

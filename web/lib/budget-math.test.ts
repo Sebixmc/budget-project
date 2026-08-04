@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
   computeCascade,
+  sumIncomeSources,
   taxLineYearly,
   DEFAULT_TAX_LINES,
   type CascadeInput,
 } from "./budget-math";
+
+describe("sumIncomeSources", () => {
+  it("sums yearly sources exactly to the cent", () => {
+    expect(
+      sumIncomeSources([
+        { name: "Salary", amount: 85000 },
+        { name: "Side income", amount: 4200.5 },
+      ]),
+    ).toBe(89200.5);
+    expect(sumIncomeSources([{ name: "A", amount: 0.1 }, { name: "B", amount: 0.2 }])).toBe(0.3);
+    expect(sumIncomeSources([])).toBe(0);
+  });
+});
 
 const base: CascadeInput = { grossAnnual: 0, taxLines: [], goals: [], expenseLimits: [] };
 
