@@ -1,26 +1,43 @@
 import { getBudget } from "@/lib/data/budget";
 import { selectIncome } from "@/lib/charts/sankey-data";
+import { computeCascade } from "@/lib/budget-math";
 import { PageHeader } from "@/components/app/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BudgetSankey } from "@/components/charts/budget-sankey";
-import { BudgetPlanner } from "./budget-planner";
+import { BudgetBuilder } from "./budget-builder";
 
 export default async function BudgetPage() {
   const data = await getBudget();
 
-  // Sankey inputs: budgeted expense categories + the income figure the
-  // planner already uses (estimate, else historical average).
   const expenseLimits = data.categories
     .filter((c) => c.flow_type === "expense")
     .map((c) => ({ category: c.category, limit: c.monthly_limit }));
-  const { income, label } = selectIncome(data.income, data.avgIncome);
-  const hasSankey = expenseLimits.some((c) => c.limit > 0);
+
+  // Sankey income by priority: builder profile (after-tax monthly) → user's
+  // monthly estimate → historical average. Savings goals branch only when a
+  // profile drives the numbers (specs/budget-builder.md §8).
+  const cascade =
+    data.profile && data.profile.gross_annual > 0
+      ? computeCascade({
+          grossAnnual: data.profile.gross_annual,
+          taxLines: data.profile.tax_lines,
+          goals: data.goals.map((g) => ({ monthlyAmount: g.monthly_amount })),
+          expenseLimits: [],
+        })
+      : null;
+  const { income, label } = selectIncome(data.income, data.avgIncome, cascade?.monthlyAfterTax);
+  const savingsGoals = cascade
+    ? data.goals
+        .filter((g) => g.monthly_amount > 0)
+        .map((g) => ({ name: g.name, monthly: g.monthly_amount }))
+    : undefined;
+  const hasSankey = expenseLimits.some((c) => c.limit > 0) || (savingsGoals?.length ?? 0) > 0;
 
   return (
     <div>
       <PageHeader
         title="Budget"
-        description="Plan what your budget should be — informed by your historical averages."
+        description="Follow the paycheck: yearly facts, then monthly choices."
       />
       <div className="flex flex-col gap-6">
         {hasSankey && (
@@ -29,11 +46,16 @@ export default async function BudgetPage() {
               <CardTitle>Where the paycheck goes</CardTitle>
             </CardHeader>
             <CardContent>
-              <BudgetSankey income={income} incomeLabel={label} expenseLimits={expenseLimits} />
+              <BudgetSankey
+                income={income}
+                incomeLabel={label}
+                expenseLimits={expenseLimits}
+                savingsGoals={savingsGoals}
+              />
             </CardContent>
           </Card>
         )}
-        <BudgetPlanner data={data} />
+        <BudgetBuilder data={data} />
       </div>
     </div>
   );
