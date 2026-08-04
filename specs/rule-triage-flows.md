@@ -90,6 +90,15 @@ Implemented as specced, with three small deviations:
   panel pinned bottom-center of the viewport, unaffected by list refreshes,
   filters, or scrolling; single and bulk edits share it. All other prompt
   behavior (dismissal semantics, live count, one-at-a-time) is as specced.
+- **Bulk edits queue a prompt per merchant** (changed 2026-08-04, at Sebi's
+  request after live use). Spec §8 showed the prompt only when every selected
+  row shared one cleaned pattern; now a mixed-merchant bulk apply queues one
+  prompt per distinct cleaned merchant (largest group first, "n of N"
+  indicator). Save rule / Just this once each advance instantly to the next
+  item in the same screen position — spam-clickable without moving the mouse
+  (the brief saved-confirmation shows only on the final item); "Skip all"
+  abandons the rest of the queue with no side effects. A single-row edit is a
+  queue of one and behaves exactly as before.
 
 Verification: Vitest covers `cleanMerchantPattern` + `groupByMerchant`
 (31 tests green) and lint/typecheck/`next build` pass. The manual browser

@@ -8,24 +8,35 @@ import { Button } from "@/components/ui/button";
 import { countRuleMatches, createRuleAndApply } from "@/app/(app)/rules/actions";
 
 /**
- * Dismissible "save as rule?" prompt shown after an inline category edit on
- * the Transactions page. Pre-filled with the cleaned merchant pattern
- * (editable) and a live count of the other auto-categorized rows the rule
- * would fix. Saving upserts the rule and recategorizes matching auto rows
- * only; any dismissal makes no changes beyond the already-saved edit
+ * Dismissible "save as rule?" prompt shown after a category edit on the
+ * Transactions page. Pre-filled with the cleaned merchant pattern (editable)
+ * and a live count of the other auto-categorized rows the rule would fix.
+ * Saving upserts the rule and recategorizes matching auto rows only; any
+ * dismissal makes no changes beyond the already-saved edit
  * (specs/rule-triage-flows.md). Rendered as a floating panel pinned to the
  * viewport by the transactions table, so list refreshes can't dislodge it.
+ *
+ * Bulk edits queue one prompt per merchant: `progress` shows "n of N",
+ * `confirmInline: false` makes Save advance instantly (no confirmation
+ * pause) so the next item lands under the cursor, and `onDismissAll` renders
+ * a Skip-all escape hatch.
  */
 export function RulePrompt({
   initialPattern,
   category,
   onDismiss,
   onSaved,
+  onDismissAll,
+  progress,
+  confirmInline = true,
 }: {
   initialPattern: string;
   category: string;
   onDismiss: () => void;
   onSaved?: () => void;
+  onDismissAll?: () => void;
+  progress?: { current: number; total: number };
+  confirmInline?: boolean;
 }) {
   const [pattern, setPattern] = useState(initialPattern);
   const [count, setCount] = useState<number | null>(null);
@@ -63,9 +74,13 @@ export function RulePrompt({
         setError(res.error || "Could not save the rule.");
         return;
       }
-      setSaved(res.updated);
       onSaved?.();
-      setTimeout(onDismiss, 1800);
+      if (confirmInline) {
+        setSaved(res.updated);
+        setTimeout(onDismiss, 1800);
+      } else {
+        onDismiss();
+      }
     });
   }
 
@@ -91,6 +106,11 @@ export function RulePrompt({
       <span className="whitespace-nowrap">as</span>
       <Badge variant="outline">{category}</Badge>
       <span className="whitespace-nowrap">?</span>
+      {progress && progress.total > 1 && (
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          {progress.current} of {progress.total}
+        </span>
+      )}
       <div className="ml-auto flex items-center gap-2">
         <Button type="button" size="sm" onClick={save} disabled={!pattern.trim() || pending}>
           {pending
@@ -102,6 +122,11 @@ export function RulePrompt({
         <Button type="button" size="sm" variant="ghost" onClick={onDismiss}>
           <X /> Just this once
         </Button>
+        {onDismissAll && (
+          <Button type="button" size="sm" variant="ghost" onClick={onDismissAll}>
+            Skip all
+          </Button>
+        )}
       </div>
       {error && <p className="w-full text-xs text-negative">{error}</p>}
     </div>
