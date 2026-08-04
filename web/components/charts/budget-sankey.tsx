@@ -7,6 +7,8 @@ import {
   buildBudgetSankey,
   type BudgetSankeyGraph,
   type ExpenseLimit,
+  type SankeyNode,
+  type SavingsBranch,
 } from "@/lib/charts/sankey-data";
 import {
   CHART_NEUTRALS,
@@ -20,22 +22,25 @@ import { formatCurrency } from "@/lib/utils";
 
 /**
  * Income → allocation Sankey for the Budget page, with the meta line above
- * it: `Income $X · Budgeted $Y · Unallocated $Z`, or an over-allocated
- * warning when limits exceed income (links are never scaled or clipped).
- * Renders nothing when no expense category has a positive limit.
+ * it: `Income $X · Savings $S · Budgeted $Y · Unallocated $Z`, or an
+ * over-allocated warning when commitments exceed income (links are never
+ * scaled or clipped). Savings goals branch as first-class flows when the
+ * budget builder profile provides them. Renders nothing when nothing flows.
  */
 export function BudgetSankey({
   income,
   incomeLabel,
   expenseLimits,
+  savingsGoals,
 }: {
   income: number;
   incomeLabel: string;
   expenseLimits: ExpenseLimit[];
+  savingsGoals?: SavingsBranch[];
 }) {
   const graph = useMemo(
-    () => buildBudgetSankey({ income, incomeLabel, expenseLimits }),
-    [income, incomeLabel, expenseLimits],
+    () => buildBudgetSankey({ income, incomeLabel, expenseLimits, savingsGoals }),
+    [income, incomeLabel, expenseLimits, savingsGoals],
   );
   const option = useMemo<EChartsCoreOption | null>(() => graph && sankeyOption(graph), [graph]);
 
@@ -51,13 +56,16 @@ export function BudgetSankey({
           </span>
           <span className="text-muted-foreground">
             {" "}
-            · Income {formatCurrency(meta.income)} · Budgeted {formatCurrency(meta.budgeted)}
+            · Income {formatCurrency(meta.income)}
+            {meta.savings > 0 ? ` · Savings ${formatCurrency(meta.savings)}` : ""} · Budgeted{" "}
+            {formatCurrency(meta.budgeted)}
           </span>
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Income {formatCurrency(meta.income)} · Budgeted {formatCurrency(meta.budgeted)} ·
-          Unallocated {formatCurrency(meta.unallocated)}
+          Income {formatCurrency(meta.income)}
+          {meta.savings > 0 ? ` · Savings ${formatCurrency(meta.savings)}` : ""} · Budgeted{" "}
+          {formatCurrency(meta.budgeted)} · Unallocated {formatCurrency(meta.unallocated)}
         </p>
       )}
       <EChart option={option} className="h-[300px] w-full" ariaLabel="Income to budget allocation flow" />
@@ -70,9 +78,11 @@ function sankeyOption(graph: BudgetSankeyGraph): EChartsCoreOption {
   const neutrals = CHART_NEUTRALS[theme];
 
   let catIndex = 0;
-  const nodeColor = (kind: "income" | "category" | "unallocated") => {
+  const nodeColor = (kind: SankeyNode["kind"]) => {
     if (kind === "income") return FLOW_COLORS.income;
     if (kind === "unallocated") return NEUTRAL_NODE[theme];
+    // Goals and categories share the categorical cycle; goals come first in
+    // node order so they get the leading colors.
     return paletteColor(catIndex++);
   };
 
