@@ -33,6 +33,21 @@ and import into Vercel. Everything else is copy/paste.
    - Email provider is on by default → magic links work immediately. Supabase's built-in email
      is rate-limited; add custom SMTP later for volume.
 
+5. **Fix the email templates (required)** — **Authentication → Emails**. The app's
+   `/auth/confirm` route verifies a `token_hash` server-side; Supabase's **default templates
+   don't send one**, so every link would land on `/login?error=link`. In **both** the
+   "Confirm signup" and "Magic Link" templates, replace the link's `{{ .ConfirmationURL }}`
+   href with:
+
+   ```
+   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email
+   ```
+
+   Tip: give both templates the same subject/body (e.g. "Sign in to Ledger") — first-time and
+   returning sign-ins send different templates, and identical copy avoids "verify vs sign in"
+   confusion. `{{ .SiteURL }}` follows the Site URL setting, so links point at production
+   automatically once you update it in Phase 3.
+
 ---
 
 ## Phase 2 — Verify locally (recommended before deploying)
