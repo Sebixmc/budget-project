@@ -42,7 +42,7 @@ The page becomes a single scrolling column of titled sections with a sticky in-p
 
 ## Files to touch
 
-- `web/supabase/migrations/0003_user_settings.sql` — new `user_settings` table (`user_id` PK, `default_page`), RLS policies.
+- `web/supabase/migrations/0004_user_settings.sql` — new `user_settings` table (`user_id` PK, `default_page`), RLS policies.
 - `web/lib/data/categories.ts` — `getCategoryUsage()` (new).
 - `web/lib/data/settings.ts` — `getUserSettings()` (new).
 - `web/app/(app)/settings/actions.ts` — add `renameCategory`, `deleteCategory`, `updateDefaultPage`, `setMonthlyIncome`, `deleteAllTransactions`.

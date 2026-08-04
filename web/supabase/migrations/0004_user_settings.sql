@@ -1,4 +1,4 @@
--- 0003: user_settings (2026-08-04)
+-- 0004: user_settings (2026-08-04)
 --   Per-user app preferences that don't belong to any existing table.
 --   Currently: default landing page after sign-in. Theme is client-side only
 --   (localStorage), so it is intentionally NOT stored here.
