@@ -13,18 +13,18 @@ import { countRuleMatches, createRuleAndApply } from "@/app/(app)/rules/actions"
  * (editable) and a live count of the other auto-categorized rows the rule
  * would fix. Saving upserts the rule and recategorizes matching auto rows
  * only; any dismissal makes no changes beyond the already-saved edit
- * (specs/rule-triage-flows.md).
+ * (specs/rule-triage-flows.md). The parent defers its list refresh until
+ * `onDismiss` fires, so the anchor row stays in place while the prompt is
+ * open — even when the edit no longer matches the active filters.
  */
 export function RulePrompt({
   initialPattern,
   category,
   onDismiss,
-  onSaved,
 }: {
   initialPattern: string;
   category: string;
   onDismiss: () => void;
-  onSaved: () => void;
 }) {
   const [pattern, setPattern] = useState(initialPattern);
   const [count, setCount] = useState<number | null>(null);
@@ -63,7 +63,6 @@ export function RulePrompt({
         return;
       }
       setSaved(res.updated);
-      onSaved();
       setTimeout(onDismiss, 1800);
     });
   }
