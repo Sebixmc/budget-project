@@ -1,7 +1,7 @@
 # Rule triage flows — post-upload batch categorization + save-as-rule on edit
 
 **Work-queue item:** Inline merchant-rule creation: post-upload triage of uncategorized transactions + save-as-rule prompt on the Transactions page (promoted from proposed-tickets "Save as rule from a transaction edit").
-**Status:** Draft
+**Status:** Implemented 2026-08-04 (unit-verified + CI green; in-browser pass pending — see Amendment)
 
 ## Purpose
 
@@ -67,6 +67,28 @@ Categorizing "Other" transactions today requires bouncing between the Transactio
 ## Open questions
 
 - None blocking. Naming of the "Uncategorized" bucket: triage targets `category = 'Other'` only; legacy "Uncategorized" appears in `ALL_CATEGORIES` but the categorizer never emits it for new imports.
+
+## Amendment 2026-08-04
+
+Implemented as specced, with three small deviations:
+
+- **Grouping lives in the pure layer.** The by-merchant grouping (count, rounded
+  total, ids, sample, ordering) is `groupByMerchant()` in `web/lib/merchant.ts`
+  rather than inline in `upload/actions.ts`, so it unit-tests directly;
+  `getUncategorizedGroups()` is the RLS-scoped query + the pure call. Groups also
+  carry the row `ids` so the one-off path targets exactly the grouped rows.
+- **"Categorize without saving a rule" reuses `bulkCategory()`** from
+  `transactions/actions.ts` (same semantics: sets category, marks `manual`) —
+  no new server action.
+- **Rule-matching `ilike` escapes LIKE wildcards** (`%`, `_`, `\`) so a pattern
+  matches as a literal substring, exactly like the categorizer's `includes()`.
+
+Verification: Vitest covers `cleanMerchantPattern` + `groupByMerchant`
+(31 tests green) and lint/typecheck/`next build` pass. The manual browser
+pass in the Test plan could **not** be run from the implementing dev
+container — its firewall blocks the Supabase host (see proposed-tickets
+2026-08-04) — so the work-queue item stays `[IN PROGRESS]` until someone
+walks the Test plan on a real deployment.
 
 ## Test plan
 

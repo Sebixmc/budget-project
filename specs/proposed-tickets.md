@@ -47,6 +47,8 @@ _Test coverage, lint config, the start script, local-run ergonomics._
 
 - **Normalize legacy modules to ruff-clean and widen CI lint to the whole repo** — `app.py`, `database.py`, `parser.py`, `categorizer.py` predate ruff; CI currently lints only `tests/`. Run `ruff check --fix .` + `ruff format .`, eyeball the diff (especially import reordering), then change `.github/workflows/ci.yml` to lint `.` instead of `tests/`. Surfaced by: infra-template application. 2026-07-22
 - **Expand test coverage to `parser.py` and `database.py`** — only `categorizer.py` and a boot smoke test exist so far. Add parser tests per bank format (Capital One credit/bank, UCCU) using synthetic CSV bytes, and DB idempotency tests for `insert_transactions`. Surfaced by: infra-template application. 2026-07-22
+- **Allow Supabase (and PyPI) through the devcontainer firewall** — `.devcontainer/init-firewall.sh` blocks `*.supabase.co` and `pypi.org`, so an agent in the container can't verify `web/` features on a running server (middleware hangs reaching Supabase) or install `ruff`/`pytest` for the legacy CI. Add the project's Supabase host + PyPI to the allowlist. Surfaced by: rule-triage-flows implementation. 2026-08-04
+- **Clean up `web/.next.corrupted-2026-08-03/`** — a 352 MB moved-aside Next build dir left in the working tree (now gitignored and eslint-ignored via `.next*`); safe to delete once nothing in it is needed. Surfaced by: rule-triage-flows implementation. 2026-08-04
 
 ### Hosted rewrite — deferred parity (web/)
 
