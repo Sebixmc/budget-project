@@ -39,5 +39,10 @@ CLAUDE.local.md
 uploads/
 *.csv
 
+# ── Node ───────────────────────────────────────────────────────────────────────
+# web/ has its own .gitignore for its install; this catches stray root-level
+# ones and the vitest cache that appears when tests are run from the repo root.
+node_modules/
+
 # ── R leftovers ────────────────────────────────────────────────────────────────
 .Rhistory

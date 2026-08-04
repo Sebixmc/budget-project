@@ -1,0 +1,7 @@
+# Files that are consumed by Linux (inside the dev container, or by Docker at
+# build time) must keep LF endings even when checked out on Windows, where
+# core.autocrlf=true would otherwise rewrite them to CRLF. A CRLF shebang makes
+# the kernel fail the script with "bad interpreter: /bin/bash^M", and CRLF in a
+# Dockerfile breaks the trailing-backslash line continuations.
+*.sh text eol=lf
+Dockerfile text eol=lf
