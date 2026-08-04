@@ -12,13 +12,16 @@ import type { Transaction } from "@/lib/data/transactions";
 import { RulePrompt } from "@/components/app/rule-prompt";
 import { bulkCategory, updateCategory, updateNotes } from "./actions";
 
-/** The active save-as-rule prompt, shown in a floating panel pinned to the
- *  bottom of the viewport — filters and refreshes can't dislodge it. `key`
- *  remounts the prompt so each edit starts fresh. */
+/** The active save-as-rule prompt queue, shown one item at a time in a
+ *  floating panel pinned to the bottom of the viewport — filters and
+ *  refreshes can't dislodge it, and each answered item is replaced in place
+ *  by the next so the buttons never move. A single edit is a queue of one;
+ *  a bulk apply queues one item per distinct cleaned merchant. */
+type PromptItem = { pattern: string; category: string };
 type PromptState = {
   key: number;
-  pattern: string;
-  category: string;
+  queue: PromptItem[];
+  index: number;
 };
 
 export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
@@ -52,7 +55,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
       // list on refresh doesn't disturb it. A new edit replaces any prompt
       // already open (only one at a time).
       const pattern = cleanMerchantPattern(t.description);
-      setPrompt(pattern ? { key: Date.now(), pattern, category } : null);
+      setPrompt(pattern ? { key: Date.now(), queue: [{ pattern, category }], index: 0 } : null);
     });
   }
 
@@ -68,37 +71,61 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
     if (!bulkCat || selected.size === 0) return;
     const ids = [...selected];
     const category = bulkCat;
-    // Offer a rule only when every selected row shares one cleaned pattern.
-    const patterns = new Set(
-      transactions.filter((t) => selected.has(t.id)).map((t) => cleanMerchantPattern(t.description)),
-    );
-    const shared = patterns.size === 1 ? [...patterns][0] : "";
+    // Queue one rule prompt per distinct cleaned merchant in the selection,
+    // biggest group first, so every merchant in the bulk gets its own ask.
+    const groups = new Map<string, number>();
+    for (const t of transactions) {
+      if (!selected.has(t.id)) continue;
+      const pattern = cleanMerchantPattern(t.description);
+      if (pattern) groups.set(pattern, (groups.get(pattern) ?? 0) + 1);
+    }
+    const queue = [...groups.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([pattern]): PromptItem => ({ pattern, category }));
     startTransition(async () => {
       await bulkCategory(ids, category);
       setSelected(new Set());
       setBulkCat("");
       router.refresh();
-      setPrompt(shared ? { key: Date.now(), pattern: shared, category } : null);
+      setPrompt(queue.length > 0 ? { key: Date.now(), queue, index: 0 } : null);
     });
   }
 
-  /** Dismiss the prompt identified by `key` — a stale confirmation timer from
-   *  a replaced prompt must not close the one currently open. */
-  function dismissPrompt(key: number) {
+  /** Advance past queue item `index` (answered or skipped): the next item
+   *  fills the same spot, or the panel closes after the last one. The key +
+   *  index guard keeps a stale confirmation timer from touching a newer
+   *  prompt. */
+  function advancePrompt(key: number, index: number) {
+    setPrompt((p) => {
+      if (p?.key !== key || p.index !== index) return p;
+      return p.index + 1 < p.queue.length ? { ...p, index: p.index + 1 } : null;
+    });
+  }
+
+  /** Close the whole queue ("Skip all"). */
+  function dismissAll(key: number) {
     setPrompt((p) => (p?.key === key ? null : p));
   }
 
   // Floating, non-blocking panel pinned to the bottom of the viewport: it
   // stays put while the list scrolls or re-filters (the edit that opened it
   // often removes its own row from the filtered results).
-  const promptOverlay = prompt && (
+  const current = prompt?.queue[prompt.index];
+  const promptOverlay = prompt && current && (
     <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
       <div className="pointer-events-auto w-full max-w-2xl" role="dialog" aria-label="Save as rule">
         <RulePrompt
-          key={prompt.key}
-          initialPattern={prompt.pattern}
-          category={prompt.category}
-          onDismiss={() => dismissPrompt(prompt.key)}
+          key={`${prompt.key}:${prompt.index}`}
+          initialPattern={current.pattern}
+          category={current.category}
+          progress={{ current: prompt.index + 1, total: prompt.queue.length }}
+          // Mid-queue, saving advances instantly so the next item lands under
+          // the cursor; the brief confirmation shows only on the last item.
+          confirmInline={prompt.index === prompt.queue.length - 1}
+          onDismiss={() => advancePrompt(prompt.key, prompt.index)}
+          onDismissAll={
+            prompt.index + 1 < prompt.queue.length ? () => dismissAll(prompt.key) : undefined
+          }
           onSaved={() => router.refresh()}
         />
       </div>
