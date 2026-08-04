@@ -25,6 +25,12 @@ import {
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+type GoalUnit = "mo" | "yr";
+
+/** What the user typed → the stored monthly commitment. */
+const toMonthly = (value: number, unit: GoalUnit) =>
+  unit === "yr" ? round2(value / 12) : round2(value);
+
 /**
  * The paycheck cascade (specs/budget-builder.md): yearly facts (gross salary,
  * itemized tax estimate) → a prominent ÷12 pivot → monthly choices (savings
@@ -44,8 +50,13 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
     data.profile && data.profile.tax_lines.length > 0 ? data.profile.tax_lines : DEFAULT_TAX_LINES,
   );
   const [goalEdits, setGoalEdits] = useState<Record<string, { name?: string; amount?: number }>>({});
+  // Per-goal input unit: type a yearly target and it's ÷12 into the stored
+  // monthly commitment. `raw` preserves the typed yearly figure so it doesn't
+  // jitter to monthly×12 (e.g. 1000 → 83.33/mo → 999.96) after rounding.
+  const [goalUnits, setGoalUnits] = useState<Record<string, GoalUnit>>({});
+  const [goalRaw, setGoalRaw] = useState<Record<string, string>>({});
   const [limitEdits, setLimitEdits] = useState<Record<string, string>>({});
-  const [newGoal, setNewGoal] = useState({ name: "", amount: "" });
+  const [newGoal, setNewGoal] = useState({ name: "", amount: "", unit: "mo" as GoalUnit });
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const anySavedLimit = data.categories.some((c) => c.flow_type === "expense" && c.monthly_limit > 0);
@@ -267,7 +278,14 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
         }
       >
         <div className="flex flex-col gap-2">
-          {goals.map((g) => (
+          {goals.map((g) => {
+            const unit = goalUnits[g.id] ?? "mo";
+            const shown =
+              goalRaw[g.id] ??
+              (g.monthly_amount
+                ? String(unit === "yr" ? round2(g.monthly_amount * 12) : g.monthly_amount)
+                : "");
+            return (
             <div key={g.id} className="flex flex-wrap items-center gap-2">
               <Input
                 value={g.name}
@@ -282,20 +300,42 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
                 type="number"
                 step="0.01"
                 min="0"
-                value={g.monthly_amount || ""}
+                value={shown}
                 placeholder="0.00"
-                aria-label={`${g.name} monthly amount`}
-                onChange={(e) =>
+                aria-label={`${g.name} ${unit === "yr" ? "yearly" : "monthly"} amount`}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setGoalRaw((m) => ({ ...m, [g.id]: raw }));
                   setGoalEdits((m) => ({
                     ...m,
-                    [g.id]: { ...m[g.id], amount: Number(e.target.value || 0) },
-                  }))
-                }
+                    [g.id]: { ...m[g.id], amount: toMonthly(Number(raw || 0), unit) },
+                  }));
+                }}
                 onBlur={() => persist(() => upsertGoal(g.id, g.name, g.monthly_amount))}
                 className="tabular h-8 w-28 text-sm"
               />
+              <Select
+                value={unit}
+                aria-label={`${g.name} amount unit`}
+                onChange={(e) => {
+                  const next = e.target.value as GoalUnit;
+                  setGoalUnits((m) => ({ ...m, [g.id]: next }));
+                  // Re-derive the shown figure from the stored monthly amount.
+                  setGoalRaw((m) => {
+                    const rest = { ...m };
+                    delete rest[g.id];
+                    return rest;
+                  });
+                }}
+                className="h-8 w-20 text-sm"
+              >
+                <option value="mo">/ mo</option>
+                <option value="yr">/ yr</option>
+              </Select>
               <span className="text-xs text-muted-foreground">
-                /mo ≈ {formatCurrency(round2(g.monthly_amount * 12), { cents: false })} / yr
+                {unit === "yr"
+                  ? `= ${formatCurrency(g.monthly_amount)} / mo`
+                  : `≈ ${formatCurrency(round2(g.monthly_amount * 12), { cents: false })} / yr`}
               </span>
               <Button
                 type="button"
@@ -308,7 +348,8 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
                 <X className="text-negative" />
               </Button>
             </div>
-          ))}
+            );
+          })}
 
           <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
             <Input
@@ -323,19 +364,33 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
               step="0.01"
               min="0"
               value={newGoal.amount}
-              placeholder="$ / mo"
-              aria-label="New goal monthly amount"
+              placeholder={newGoal.unit === "yr" ? "$ / yr" : "$ / mo"}
+              aria-label={`New goal ${newGoal.unit === "yr" ? "yearly" : "monthly"} amount`}
               onChange={(e) => setNewGoal((s) => ({ ...s, amount: e.target.value }))}
               className="tabular h-8 w-28 text-sm"
             />
+            <Select
+              value={newGoal.unit}
+              aria-label="New goal amount unit"
+              onChange={(e) => setNewGoal((s) => ({ ...s, unit: e.target.value as GoalUnit }))}
+              className="h-8 w-20 text-sm"
+            >
+              <option value="mo">/ mo</option>
+              <option value="yr">/ yr</option>
+            </Select>
+            {newGoal.unit === "yr" && Number(newGoal.amount) > 0 && (
+              <span className="text-xs text-muted-foreground">
+                = {formatCurrency(toMonthly(Number(newGoal.amount), "yr"))} / mo
+              </span>
+            )}
             <Button
               type="button"
               size="sm"
               disabled={!newGoal.name.trim()}
               onClick={() => {
-                const { name, amount } = newGoal;
-                setNewGoal({ name: "", amount: "" });
-                persist(() => upsertGoal(null, name, Number(amount || 0)));
+                const { name, amount, unit } = newGoal;
+                setNewGoal({ name: "", amount: "", unit });
+                persist(() => upsertGoal(null, name, toMonthly(Number(amount || 0), unit)));
               }}
             >
               <Plus /> Add goal
