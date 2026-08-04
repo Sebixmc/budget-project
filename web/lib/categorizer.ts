@@ -38,7 +38,7 @@ export const RULES: ReadonlyArray<readonly [string, readonly string[]]> = [
     "venmo to",
     "funds tran",
   ]],
-  ["Rent & Housing", [
+  ["Rent", [
     "yardi", "tpm, inc", "tpm inc", "resident",
     "rent", "lease", "landlord", "property mgmt",
   ]],
@@ -60,7 +60,7 @@ export const RULES: ReadonlyArray<readonly [string, readonly string[]]> = [
     "costco", "sam's club", "bj's",
     "walmart supercenter", "walmart grocery", "wm supercenter",
   ]],
-  ["Dining", [
+  ["Eating Out", [
     "taco bell", "chick fil a", "chick-fil-a",
     "five sushi", "sushi brother",
     "cubbys", "cubby",
@@ -80,7 +80,7 @@ export const RULES: ReadonlyArray<readonly [string, readonly string[]]> = [
     "ihop", "applebee", "olive garden", "outback", "cheesecake factory",
     "south end market",
   ]],
-  ["Gas & Fuel", [
+  ["Car & Gas", [
     "maverik",
     "shell", "bp ", "exxon", "chevron", "sunoco", "mobil ",
     "speedway", "wawa gas", "sheetz", "circle k gas",
@@ -171,22 +171,22 @@ export const RULES: ReadonlyArray<readonly [string, readonly string[]]> = [
 /** Bank category labels (Capital One + UCCU) → our canonical category. */
 const FALLBACK_MAP: ReadonlyArray<readonly [string, string]> = [
   // Capital One credit card labels
-  ["food & drink", "Dining"],
+  ["food & drink", "Eating Out"],
   ["groceries", "Groceries"],
-  ["gas", "Gas & Fuel"],
+  ["gas", "Car & Gas"],
   ["travel", "Travel"],
   ["entertainment", "Entertainment"],
   ["health", "Health & Medical"],
   ["shopping", "Shopping"],
   ["bills & utilities", "Utilities"],
-  ["automotive", "Gas & Fuel"],
+  ["automotive", "Car & Gas"],
   ["education", "Education"],
   ["transfer", "Transfer"],
   ["payment", "Transfer"],
   ["fees", "Fees & Charges"],
   // UCCU classification labels
-  ["food & dining", "Dining"],
-  ["fast food", "Dining"],
+  ["food & dining", "Eating Out"],
+  ["fast food", "Eating Out"],
   ["fees & charges", "Fees & Charges"],
   ["banking fee", "Fees & Charges"],
   ["income", "Income"],

@@ -47,7 +47,7 @@ describe("detectAndParse — capital_one_credit", () => {
       description: "STARBUCKS STORE 5",
       amount: 4.75,
       flow: "debit",
-      category: "Dining",
+      category: "Eating Out",
     });
     expect(rows[1]).toMatchObject({ amount: 1500, flow: "credit" });
     expect(rows.every((r) => r.amount >= 0)).toBe(true);
@@ -88,7 +88,7 @@ describe("detectAndParse — uccu_checking", () => {
   it("imports only Posted rows, unescapes classification, trusts explicit Transfer", () => {
     const rows = detectAndParse(csv, "uccu_checking");
     expect(rows).toHaveLength(2); // the Pending row is skipped
-    expect(rows[0]).toMatchObject({ description: "MAVERIK 12", flow: "debit", category: "Gas & Fuel" });
+    expect(rows[0]).toMatchObject({ description: "MAVERIK 12", flow: "debit", category: "Car & Gas" });
     expect(rows[1].category).toBe("Transfer");
   });
 });

@@ -8,9 +8,9 @@ import { ALL_CATEGORIES, categorize } from "./categorizer";
 
 describe("categorize", () => {
   it("keyword match wins over default", () => {
-    expect(categorize("STARBUCKS STORE 123")).toBe("Dining");
+    expect(categorize("STARBUCKS STORE 123")).toBe("Eating Out");
     expect(categorize("WINCO FOODS #45")).toBe("Groceries");
-    expect(categorize("SHELL OIL 9987")).toBe("Gas & Fuel");
+    expect(categorize("SHELL OIL 9987")).toBe("Car & Gas");
   });
 
   it("merchant rule beats keyword", () => {
@@ -28,8 +28,8 @@ describe("categorize", () => {
   });
 
   it("falls back to the bank's raw category when no keyword matches", () => {
-    expect(categorize("MERCHANT 4471", "Food & Drink")).toBe("Dining");
-    expect(categorize("MERCHANT 4471", "Gas")).toBe("Gas & Fuel");
+    expect(categorize("MERCHANT 4471", "Food & Drink")).toBe("Eating Out");
+    expect(categorize("MERCHANT 4471", "Gas")).toBe("Car & Gas");
   });
 
   it("falls back to Other when nothing matches", () => {
