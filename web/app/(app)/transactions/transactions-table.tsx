@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useTransition } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { Select } from "@/components/ui/select";
@@ -12,8 +12,9 @@ import type { Transaction } from "@/lib/data/transactions";
 import { RulePrompt } from "@/components/app/rule-prompt";
 import { bulkCategory, updateCategory, updateNotes } from "./actions";
 
-/** The active save-as-rule prompt; anchorId=null anchors it above the table
- *  (bulk edits). `key` remounts the prompt so each edit starts fresh. */
+/** The active save-as-rule prompt, anchored under row `anchorId` (rendered
+ *  above the table if that row isn't in the current list, or anchorId is
+ *  null). `key` remounts the prompt so each edit starts fresh. */
 type PromptState = {
   key: number;
   pattern: string;
@@ -27,6 +28,14 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCat, setBulkCat] = useState("");
   const [prompt, setPrompt] = useState<PromptState | null>(null);
+  // Optimistic category overrides for rows edited while a prompt is open —
+  // the server refresh is deferred until the prompt closes (see onCategory),
+  // so the <Select> needs the new value from here in the meantime.
+  const [edited, setEdited] = useState<Record<string, string>>({});
+  const promptRef = useRef<PromptState | null>(null);
+  useEffect(() => {
+    promptRef.current = prompt;
+  }, [prompt]);
 
   const allChecked = transactions.length > 0 && selected.size === transactions.length;
 
@@ -46,11 +55,18 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
   function onCategory(t: Transaction, category: string) {
     startTransition(async () => {
       await updateCategory(t.id, category);
-      router.refresh();
-      // The edit is saved either way; offer to make it a rule. A new edit
-      // replaces any prompt already open (only one visible at a time).
       const pattern = cleanMerchantPattern(t.description);
-      setPrompt(pattern ? { key: Date.now(), pattern, category, anchorId: t.id } : null);
+      if (!pattern) {
+        setPrompt(null);
+        router.refresh();
+        return;
+      }
+      // Don't refresh yet: with a category filter active, refreshing would
+      // drop this row from the list and yank the prompt away from it. Show
+      // the new category optimistically and sync when the prompt closes.
+      // A new edit replaces any prompt already open (only one at a time).
+      setEdited((prev) => ({ ...prev, [t.id]: category }));
+      setPrompt({ key: Date.now(), pattern, category, anchorId: t.id });
     });
   }
 
@@ -71,19 +87,36 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
       transactions.filter((t) => selected.has(t.id)).map((t) => cleanMerchantPattern(t.description)),
     );
     const shared = patterns.size === 1 ? [...patterns][0] : "";
+    // Anchor the prompt under the first selected row in display order.
+    const anchorId = transactions.find((t) => selected.has(t.id))?.id ?? null;
     startTransition(async () => {
       await bulkCategory(ids, category);
       setSelected(new Set());
       setBulkCat("");
-      router.refresh();
-      setPrompt(shared ? { key: Date.now(), pattern: shared, category, anchorId: null } : null);
+      if (!shared) {
+        setPrompt(null);
+        router.refresh();
+        return;
+      }
+      // Same deferral as onCategory: keep the edited rows in place under the
+      // active filters until the prompt closes.
+      setEdited((prev) => {
+        const next = { ...prev };
+        for (const id of ids) next[id] = category;
+        return next;
+      });
+      setPrompt({ key: Date.now(), pattern: shared, category, anchorId });
     });
   }
 
-  /** Dismiss the prompt identified by `key` — a stale timer from a replaced
-   *  prompt must not close the one currently open. */
+  /** Close the prompt identified by `key` and run the deferred refresh. A
+   *  stale confirmation timer from a replaced prompt must do neither. */
   function dismissPrompt(key: number) {
-    setPrompt((p) => (p?.key === key ? null : p));
+    if (promptRef.current?.key !== key) return;
+    promptRef.current = null;
+    setPrompt(null);
+    setEdited({});
+    router.refresh();
   }
 
   function renderPrompt(p: PromptState) {
@@ -93,7 +126,6 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
         initialPattern={p.pattern}
         category={p.category}
         onDismiss={() => dismissPrompt(p.key)}
-        onSaved={() => router.refresh()}
       />
     );
   }
@@ -180,7 +212,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
                 <td className="py-2 pr-3">
                   <div className="w-40">
                     <Select
-                      value={t.category}
+                      value={edited[t.id] ?? t.category}
                       onChange={(e) => onCategory(t, e.target.value)}
                       disabled={pending}
                     >
