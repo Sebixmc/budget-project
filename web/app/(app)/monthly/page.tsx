@@ -4,10 +4,10 @@ import { PageHeader } from "@/components/app/page-header";
 import { KpiCard } from "@/components/app/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
+import { MonthPicker } from "@/components/ui/month-picker";
 import { Button } from "@/components/ui/button";
 import { TrendLineChart } from "@/components/charts/insight-charts";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatMonthLabel } from "@/lib/utils";
 
 type SearchParams = Promise<{ month?: string; account?: string }>;
 
@@ -19,9 +19,9 @@ export default async function MonthlyPage({ searchParams }: { searchParams: Sear
 
   return (
     <div>
-      <PageHeader title="Monthly" description={month}>
+      <PageHeader title="Monthly" description={formatMonthLabel(month)}>
         <form className="flex items-center gap-2">
-          <Input type="month" name="month" defaultValue={month} aria-label="Month" className="h-9 w-auto" />
+          <MonthPicker name="month" value={month} aria-label="Month" />
           <Select name="account" defaultValue={sp.account ?? ""} aria-label="Account" className="w-40">
             <option value="">All accounts</option>
             {accounts.map((a) => (
