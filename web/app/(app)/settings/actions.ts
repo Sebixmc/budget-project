@@ -3,9 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { BANK_FORMATS } from "@/lib/parser";
+import { validateDelete, validateRename } from "@/lib/categories";
+import { isValidDefaultPage } from "@/lib/settings";
 
 function validBankFormat(v: string): boolean {
   return v in BANK_FORMATS;
+}
+
+/** Revalidate every page that reads categorized transactions. */
+function revalidateMoneyViews() {
+  revalidatePath("/settings");
+  revalidatePath("/transactions");
+  revalidatePath("/dashboard");
+  revalidatePath("/monthly");
+  revalidatePath("/budget");
 }
 
 export async function createAccount(formData: FormData) {
@@ -41,4 +52,119 @@ export async function deleteAccount(formData: FormData) {
   revalidatePath("/settings");
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
+}
+
+export type ActionResult = { ok: boolean; error?: string };
+
+/**
+ * Rename category `oldName` → `newName` across all of the user's data. If
+ * `newName` already exists this is a MERGE: transactions/rules move over and the
+ * existing budget target for `newName` is kept. Never touches `Transfer`
+ * (hard rule #3). RLS scopes every write to the user.
+ */
+export async function renameCategory(oldName: string, newName: string): Promise<ActionResult> {
+  const from = oldName.trim();
+  const to = newName.trim();
+  const invalid = validateRename(from, to);
+  if (invalid) {
+    const msg =
+      invalid === "reserved-source" || invalid === "reserved-target"
+        ? "Transfer can't be renamed — it's excluded from all spending totals."
+        : invalid === "same"
+          ? "That's already the category name."
+          : "Enter a category name.";
+    return { ok: false, error: msg };
+  }
+
+  const supabase = await createClient();
+
+  const { error: txErr } = await supabase
+    .from("transactions")
+    .update({ category: to })
+    .eq("category", from);
+  if (txErr) return { ok: false, error: txErr.message };
+
+  await supabase.from("merchant_rules").update({ category: to }).eq("category", from);
+
+  // budget_categories PK is (user_id, category): a plain rename collides if a
+  // `to` row already exists, so merge by dropping the old row in that case.
+  const { data: existingTarget } = await supabase
+    .from("budget_categories")
+    .select("category")
+    .eq("category", to)
+    .maybeSingle();
+  if (existingTarget) {
+    await supabase.from("budget_categories").delete().eq("category", from);
+  } else {
+    await supabase.from("budget_categories").update({ category: to }).eq("category", from);
+  }
+
+  revalidateMoneyViews();
+  return { ok: true };
+}
+
+/**
+ * Delete a category: its transactions and rules are moved to `Other` and its
+ * budget target is removed. `Other` and `Transfer` can't be deleted.
+ */
+export async function deleteCategory(name: string): Promise<ActionResult> {
+  const n = name.trim();
+  const invalid = validateDelete(n);
+  if (invalid) {
+    return {
+      ok: false,
+      error: invalid === "reserved" ? "That category can't be deleted." : "Enter a category name.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("transactions")
+    .update({ category: "Other" })
+    .eq("category", n);
+  if (error) return { ok: false, error: error.message };
+  await supabase.from("merchant_rules").update({ category: "Other" }).eq("category", n);
+  await supabase.from("budget_categories").delete().eq("category", n);
+
+  revalidateMoneyViews();
+  return { ok: true };
+}
+
+/** Set the user's estimated monthly income (single row, keyed by user). */
+export async function setMonthlyIncome(estimate: number): Promise<ActionResult> {
+  if (!Number.isFinite(estimate) || estimate < 0) return { ok: false, error: "Enter a valid amount." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("budget_income")
+    .upsert({ monthly_estimate: estimate }, { onConflict: "user_id" });
+  revalidatePath("/settings");
+  revalidatePath("/budget");
+  return { ok: !error, error: error?.message };
+}
+
+/** Persist the user's default landing page (allowlisted). */
+export async function updateDefaultPage(page: string): Promise<ActionResult> {
+  if (!isValidDefaultPage(page)) return { ok: false, error: "Unknown page." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("user_settings")
+    .upsert({ default_page: page }, { onConflict: "user_id" });
+  revalidatePath("/settings");
+  return { ok: !error, error: error?.message };
+}
+
+/**
+ * Danger zone: delete ALL of the user's transactions. Accounts, rules, and
+ * budgets are left intact. RLS scopes the delete to the user; the id filter is
+ * required by supabase-js to permit the delete.
+ */
+export async function deleteAllTransactions(): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .not("id", "is", null);
+  if (error) return { ok: false, error: error.message };
+  revalidateMoneyViews();
+  return { ok: true };
 }

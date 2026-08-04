@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MailCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { DEFAULT_PAGE_FALLBACK, isValidDefaultPage } from "@/lib/settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,19 @@ function friendlyError(raw: string, mode: Mode): string {
   return raw;
 }
 
+/** Where to send the user after auth — their saved default page, or Dashboard.
+ *  Reads their own user_settings row (RLS-scoped); any miss falls back safely. */
+async function landingPage(supabase: ReturnType<typeof createClient>): Promise<string> {
+  try {
+    const { data } = await supabase.from("user_settings").select("default_page").maybeSingle();
+    const page = (data as { default_page?: string } | null)?.default_page;
+    if (page && isValidDefaultPage(page)) return page;
+  } catch {
+    // fall through
+  }
+  return DEFAULT_PAGE_FALLBACK;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
@@ -41,14 +55,14 @@ export default function LoginPage() {
       if (mode === "signin") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.push("/dashboard");
+        router.push(await landingPage(supabase));
         router.refresh();
       } else {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         if (data.session) {
           // Email confirmation is disabled → signed in immediately.
-          router.push("/dashboard");
+          router.push(await landingPage(supabase));
           router.refresh();
         } else {
           // Confirmation still enabled in Supabase; fall back gracefully.
