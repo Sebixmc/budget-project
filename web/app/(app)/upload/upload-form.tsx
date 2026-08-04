@@ -5,6 +5,7 @@ import { CheckCircle2, AlertCircle, Upload } from "lucide-react";
 import { uploadCsv, type UploadResult } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { TriagePanel } from "@/components/app/triage-panel";
 import { BANK_FORMATS, type BankFormat } from "@/lib/parser";
 import type { Account } from "@/lib/data/accounts";
 
@@ -57,6 +58,11 @@ export function UploadForm({ accounts }: { accounts: Account[] }) {
           <AlertCircle className="size-4" />
           {result.error}
         </p>
+      )}
+
+      {result?.ok && result.triage && result.triage.length > 0 && (
+        // Keyed by batch so a new import starts the triage fresh.
+        <TriagePanel key={result.batch} groups={result.triage} />
       )}
     </form>
   );

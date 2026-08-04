@@ -13,8 +13,8 @@
 # testing
 /coverage
 
-# next.js
-/.next/
+# next.js (incl. moved-aside build dirs like .next.corrupted-*)
+/.next*/
 /out/
 
 # production

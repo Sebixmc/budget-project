@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanMerchantPattern } from "./merchant";
+import { cleanMerchantPattern, groupByMerchant } from "./merchant";
 
 describe("cleanMerchantPattern", () => {
   it("lowercases and strips #-style store numbers", () => {
@@ -51,5 +51,49 @@ describe("cleanMerchantPattern", () => {
       const p = cleanMerchantPattern(desc);
       expect(p.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("groupByMerchant", () => {
+  const rows = [
+    { id: "a", description: "MAVERIK 12", amount: 30.5 },
+    { id: "b", description: "MAVERIK 288", amount: 12.25 },
+    { id: "c", description: "TRADER JOES #451", amount: 54.1 },
+    { id: "d", description: "Java Junkie", amount: 6.4 },
+    { id: "e", description: "maverik", amount: 8.05 },
+  ];
+
+  it("groups by cleaned pattern with count, rounded total, ids and a sample", () => {
+    const groups = groupByMerchant(rows);
+    expect(groups.map((g) => g.pattern)).toEqual(["maverik", "trader joes", "java junkie"]);
+    const maverik = groups[0];
+    expect(maverik.count).toBe(3);
+    expect(maverik.total).toBe(50.8);
+    expect(maverik.ids).toEqual(["a", "b", "e"]);
+    expect(maverik.sampleDescription).toBe("MAVERIK 12");
+  });
+
+  it("sorts by count desc, breaking ties by total desc", () => {
+    const groups = groupByMerchant(rows.slice(2)); // trader joes 54.10 vs java junkie 6.40 vs maverik 8.05
+    expect(groups.map((g) => g.pattern)).toEqual(["trader joes", "maverik", "java junkie"]);
+  });
+
+  it("falls back to the raw lowercased description when cleaning empties it", () => {
+    const groups = groupByMerchant([{ id: "x", description: "#1234", amount: 1 }]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].pattern).toBe("#1234");
+  });
+
+  it("drops rows with no description at all and handles empty input", () => {
+    expect(groupByMerchant([{ id: "x", description: "  ", amount: 1 }])).toEqual([]);
+    expect(groupByMerchant([])).toEqual([]);
+  });
+
+  it("avoids float drift in totals", () => {
+    const groups = groupByMerchant([
+      { id: "1", description: "cafe", amount: 0.1 },
+      { id: "2", description: "cafe", amount: 0.2 },
+    ]);
+    expect(groups[0].total).toBe(0.3);
   });
 });

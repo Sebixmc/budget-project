@@ -4,13 +4,44 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getMerchantRules } from "@/lib/data/accounts";
 import { detectAndParse } from "@/lib/parser";
+import { groupByMerchant, type MerchantGroup } from "@/lib/merchant";
+
+/** One merchant's worth of still-uncategorized transactions (triage panel). */
+export type TriageGroup = MerchantGroup;
 
 export type UploadResult = {
   ok: boolean;
   imported?: number;
   skipped?: number;
   error?: string;
+  /** Identifies this import so the triage panel resets per upload. */
+  batch?: string;
+  /** Uncategorized-by-merchant groups to triage; empty → no panel. */
+  triage?: TriageGroup[];
 };
+
+/**
+ * The user's still-uncategorized transactions (category='Other', auto),
+ * grouped by cleaned merchant pattern — across ALL accounts, not just the
+ * latest upload, so the whole pile can be cleared in one sitting
+ * (specs/rule-triage-flows.md). RLS scopes the query to the signed-in user.
+ */
+export async function getUncategorizedGroups(): Promise<TriageGroup[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("transactions")
+    .select("id, description, amount")
+    .eq("category", "Other")
+    .eq("category_source", "auto");
+
+  return groupByMerchant(
+    (data ?? []).map((row) => ({
+      id: String(row.id),
+      description: String(row.description ?? ""),
+      amount: Number(row.amount),
+    })),
+  );
+}
 
 /**
  * Parse an uploaded bank CSV and store its rows for the signed-in user.
@@ -86,5 +117,5 @@ export async function uploadCsv(
   revalidatePath("/upload");
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
-  return { ok: true, imported, skipped };
+  return { ok: true, imported, skipped, batch, triage: await getUncategorizedGroups() };
 }

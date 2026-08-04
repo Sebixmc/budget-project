@@ -27,3 +27,39 @@ export function cleanMerchantPattern(description: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/** One merchant's worth of transactions, grouped by cleaned pattern. */
+export type MerchantGroup = {
+  pattern: string;
+  count: number;
+  total: number;
+  sampleDescription: string;
+  ids: string[];
+};
+
+/**
+ * Group transactions by cleaned merchant pattern — the triage panel's shape.
+ * Rows whose description cleans to "" group under their raw lowercased text;
+ * rows with nothing at all are dropped. Sorted by count desc, then total desc.
+ */
+export function groupByMerchant(
+  rows: Array<{ id: string; description: string; amount: number }>,
+): MerchantGroup[] {
+  const groups = new Map<string, MerchantGroup>();
+  for (const row of rows) {
+    const description = row.description ?? "";
+    const pattern = cleanMerchantPattern(description) || description.trim().toLowerCase();
+    if (!pattern) continue;
+    let group = groups.get(pattern);
+    if (!group) {
+      group = { pattern, count: 0, total: 0, sampleDescription: description, ids: [] };
+      groups.set(pattern, group);
+    }
+    group.count += 1;
+    group.total += row.amount;
+    group.ids.push(row.id);
+  }
+  return [...groups.values()]
+    .map((g) => ({ ...g, total: Math.round(g.total * 100) / 100 }))
+    .sort((a, b) => b.count - a.count || b.total - a.total);
+}
