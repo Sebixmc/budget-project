@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil } from "lucide-react";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -24,12 +24,45 @@ type PromptState = {
   index: number;
 };
 
+type SortKey = "date" | "description" | "account" | "category" | "amount";
+type SortState = { key: SortKey; dir: "asc" | "desc" };
+
+function sortValue(t: Transaction, key: SortKey): string | number {
+  if (key === "amount") return t.amount;
+  if (key === "account") return t.account_name;
+  return t[key];
+}
+
 export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCat, setBulkCat] = useState("");
   const [prompt, setPrompt] = useState<PromptState | null>(null);
+  // Click a column header to sort: first click descending (largest/newest
+  // first), second flips ascending. null → the server's default (date desc).
+  const [sort, setSort] = useState<SortState | null>(null);
+
+  function onSort(key: SortKey) {
+    setSort((s) =>
+      s?.key === key ? { key, dir: s.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" },
+    );
+  }
+
+  const rows = useMemo(() => {
+    if (!sort) return transactions;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    return [...transactions].sort((a, b) => {
+      const va = sortValue(a, sort.key);
+      const vb = sortValue(b, sort.key);
+      const cmp =
+        typeof va === "number" && typeof vb === "number"
+          ? va - vb
+          : String(va).localeCompare(String(vb), undefined, { sensitivity: "base" });
+      // Tiebreak: newest first, matching the default order.
+      return cmp * dir || b.date.localeCompare(a.date);
+    });
+  }, [transactions, sort]);
 
   const allChecked = transactions.length > 0 && selected.size === transactions.length;
 
@@ -173,16 +206,16 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
               <th className="w-8 py-2">
                 <input type="checkbox" checked={allChecked} onChange={toggleAll} aria-label="Select all" />
               </th>
-              <th className="py-2 pr-3 font-medium">Date</th>
-              <th className="py-2 pr-3 font-medium">Description</th>
-              <th className="py-2 pr-3 font-medium">Account</th>
-              <th className="py-2 pr-3 font-medium">Category</th>
+              <SortHeader label="Date" k="date" sort={sort} onSort={onSort} />
+              <SortHeader label="Description" k="description" sort={sort} onSort={onSort} />
+              <SortHeader label="Account" k="account" sort={sort} onSort={onSort} />
+              <SortHeader label="Category" k="category" sort={sort} onSort={onSort} />
               <th className="py-2 pr-3 font-medium">Notes</th>
-              <th className="py-2 pl-3 text-right font-medium">Amount</th>
+              <SortHeader label="Amount" k="amount" sort={sort} onSort={onSort} alignRight />
             </tr>
           </thead>
           <tbody>
-            {transactions.map((t) => (
+            {rows.map((t) => (
               <tr key={t.id} className="border-b border-border/60 last:border-0">
                 <td className="py-2">
                   <input
@@ -240,5 +273,43 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
         </table>
       </div>
     </div>
+  );
+}
+
+/** Clickable column header: descending on first click, toggling after; the
+ *  active column shows a direction arrow. */
+function SortHeader({
+  label,
+  k,
+  sort,
+  onSort,
+  alignRight = false,
+}: {
+  label: string;
+  k: SortKey;
+  sort: SortState | null;
+  onSort: (key: SortKey) => void;
+  alignRight?: boolean;
+}) {
+  const active = sort?.key === k;
+  return (
+    <th
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}
+      className={cn("py-2 font-medium", alignRight ? "pl-3 text-right" : "pr-3")}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={cn(
+          "inline-flex items-center gap-1 font-medium transition-colors hover:text-foreground",
+          active && "text-foreground",
+          alignRight && "flex-row-reverse",
+        )}
+      >
+        {label}
+        {active &&
+          (sort.dir === "desc" ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />)}
+      </button>
+    </th>
   );
 }
