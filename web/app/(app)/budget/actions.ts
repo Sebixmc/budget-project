@@ -2,6 +2,78 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import type { TaxLine } from "@/lib/budget-math";
+
+type ActionResult = { ok: boolean; error?: string };
+
+/** A sane upper bound for money inputs — rejects fat-fingered garbage. */
+const MAX_AMOUNT = 100_000_000;
+
+function validAmount(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= MAX_AMOUNT;
+}
+
+/** Strictly validate the tax_lines payload; returns null when malformed
+ *  (wrong shape, negative values, percent outside 0–100). */
+function validateTaxLines(input: unknown): TaxLine[] | null {
+  if (!Array.isArray(input) || input.length > 20) return null;
+  const lines: TaxLine[] = [];
+  for (const raw of input) {
+    if (typeof raw !== "object" || raw === null) return null;
+    const { name, kind, value } = raw as Record<string, unknown>;
+    if (typeof name !== "string" || name.trim().length === 0 || name.length > 80) return null;
+    if (kind !== "percent" && kind !== "amount") return null;
+    if (!validAmount(value)) return null;
+    if (kind === "percent" && value > 100) return null;
+    lines.push({ name: name.trim(), kind, value });
+  }
+  return lines;
+}
+
+/** Save the cascade profile: gross yearly income + itemized tax estimate.
+ *  Rejects invalid input without persisting (spec EARS). */
+export async function saveProfile(grossAnnual: number, taxLines: TaxLine[]): Promise<ActionResult> {
+  if (!validAmount(grossAnnual)) return { ok: false, error: "Gross income must be a non-negative amount." };
+  const lines = validateTaxLines(taxLines);
+  if (!lines) return { ok: false, error: "Tax lines are malformed." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("budget_profile")
+    .upsert(
+      { gross_annual: Math.round(grossAnnual * 100) / 100, tax_lines: lines },
+      { onConflict: "user_id" },
+    );
+  revalidatePath("/budget");
+  return { ok: !error, error: error?.message };
+}
+
+/** Add (id=null) or update a savings goal (a simple monthly commitment). */
+export async function upsertGoal(
+  id: string | null,
+  name: string,
+  monthlyAmount: number,
+): Promise<ActionResult> {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (!trimmed || trimmed.length > 80) return { ok: false, error: "Goal needs a name (max 80 chars)." };
+  if (!validAmount(monthlyAmount)) return { ok: false, error: "Monthly amount must be non-negative." };
+
+  const supabase = await createClient();
+  const amount = Math.round(monthlyAmount * 100) / 100;
+  const { error } = id
+    ? await supabase.from("savings_goals").update({ name: trimmed, monthly_amount: amount }).eq("id", id)
+    : await supabase.from("savings_goals").insert({ name: trimmed, monthly_amount: amount });
+  revalidatePath("/budget");
+  return { ok: !error, error: error?.message };
+}
+
+export async function deleteGoal(id: string): Promise<ActionResult> {
+  if (typeof id !== "string" || !id) return { ok: false, error: "Missing goal id." };
+  const supabase = await createClient();
+  const { error } = await supabase.from("savings_goals").delete().eq("id", id);
+  revalidatePath("/budget");
+  return { ok: !error, error: error?.message };
+}
 
 /** Add or update a budgeted category (planning target only, no actuals). */
 export async function upsertBudgetCategory(
