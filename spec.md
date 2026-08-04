@@ -251,10 +251,17 @@ This tab is intentionally void of actual spending data. It's a tool to *plan* wh
 - Income-tagged rows are excluded from the Sankey (they aren't expense outflows)
 
 ### Settings (`/settings`)
-- Account cards with view/edit modes
-- Edit: name, owner, `bank_format` (dropdown from `BANK_FORMATS`)
-- Delete account: confirmation modal showing transaction count; cascades to `transactions` + `uploads` rows
-- Add account form: name, owner, type, bank_format
+Sectioned preferences hub with a sticky in-page jump nav (spec: [`specs/settings-page-overhaul.md`](specs/settings-page-overhaul.md)):
+- **Appearance** — Light / Dark / System theme segmented control; persists in `localStorage['theme']` (client-only), applied pre-paint in `app/layout.tsx`
+- **Accounts** — account cards with view/edit modes + the add-account form, grouped in one section
+  - Edit: name, owner, `bank_format` (dropdown from `BANK_FORMATS`)
+  - Delete account: confirmation showing transaction count; cascades to `transactions` + `uploads` rows
+  - Add account form: name, owner, type, bank_format
+- **Categories** — per-category tx count + budget badge; rename (typing an existing name = merge) and delete (moves its transactions/rules to `Other`). `Transfer` is locked (protects the transfers-excluded invariant); `Other` can't be deleted
+- **Budget preferences** — monthly-income estimate (shared with the Budget page) + default landing page after sign-in (allowlisted; the login flow redirects there)
+- **Profile & security** — signed-in email (read-only) + change-password form (`supabase.auth.updateUser`)
+- **Data & privacy** — export all the user's data as JSON (`/settings/export` route, RLS-scoped) + danger-zone "delete all transactions" (type-to-confirm)
+- Backed by a new `user_settings` table (`user_id` PK + RLS, migration `0003_user_settings.sql`) for the default-page preference
 
 ### Rules (`/rules`)
 - Table of saved merchant rules (pattern, category, created date)
@@ -345,7 +352,8 @@ Pick up `[UNTOUCHED]` items in priority order. Add new items as `[UNTOUCHED]` if
 
 - [ ] **Manual transaction entry** — let the user add a cash purchase or anything not in a CSV. Probably a button on the Transactions tab that opens a small form (date, description, amount, flow, category, account, optional notes). `[UNTOUCHED]`
 - [ ] **Delete transaction** — let the user remove a bad import (per-row × button or bulk-delete in the same flow as bulk-category). `[UNTOUCHED]`
-- [ ] **Category rename / merge** — let the user rename "Other" or consolidate two categories. UPDATE across all transactions + update `budget_categories` if the renamed category had a budget. `[UNTOUCHED]`
+- [ ] **Category rename / merge** — let the user rename "Other" or consolidate two categories. UPDATE across all transactions + update `budget_categories` if the renamed category had a budget. `[IN PROGRESS — 2026-08-04: shipped as part of the Settings page overhaul (rename/merge/delete in the Categories section); spec at specs/settings-page-overhaul.md]`
+- [ ] **Settings page overhaul** — turn `/settings` from account-only CRUD into the app's preferences hub: consolidated Accounts section + Appearance (light/dark/system), Category management (rename/merge/delete), Profile & security (email + change password), Budget preferences (income + default landing page), and Data & privacy (export all data, danger-zone delete-all). Adds a `user_settings` table. Spec: [`specs/settings-page-overhaul.md`](specs/settings-page-overhaul.md). `[IN PROGRESS — 2026-08-04: implemented (all six sections, migration 0003_user_settings, rename/merge/delete + income + default-page + export + delete-all; login honors default page). Web CI green (lint, typecheck, 61 Vitest, next build); dev server boots + auth guard verified. Remaining: in-browser Supabase pass — container firewall blocks Supabase, same as the rewrite items above]`
 - [ ] **Export filtered transactions as CSV** — on the Transactions page, an "Export" button that downloads whatever's matching the current filters. `[UNTOUCHED]`
 - [ ] **Net worth tracker** — manually input account balances over time. Probably a new tab or a section on the dashboard. Decide: per-account balance log vs single total. `[UNTOUCHED]`
 
