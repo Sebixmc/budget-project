@@ -22,3 +22,7 @@ known-first-party = ["app", "database", "parser", "categorizer"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+# The app modules (database.py, app.py, ...) live at the repo root, which bare
+# `pytest` does not put on sys.path (tests/ has no __init__.py). Without this,
+# tests/conftest.py fails on CI with "No module named 'database'".
+pythonpath = ["."]
