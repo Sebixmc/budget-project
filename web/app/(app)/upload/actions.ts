@@ -4,16 +4,10 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getMerchantRules } from "@/lib/data/accounts";
 import { detectAndParse } from "@/lib/parser";
-import { cleanMerchantPattern } from "@/lib/merchant";
+import { groupByMerchant, type MerchantGroup } from "@/lib/merchant";
 
 /** One merchant's worth of still-uncategorized transactions (triage panel). */
-export type TriageGroup = {
-  pattern: string;
-  count: number;
-  total: number;
-  sampleDescription: string;
-  ids: string[];
-};
+export type TriageGroup = MerchantGroup;
 
 export type UploadResult = {
   ok: boolean;
@@ -40,24 +34,13 @@ export async function getUncategorizedGroups(): Promise<TriageGroup[]> {
     .eq("category", "Other")
     .eq("category_source", "auto");
 
-  const groups = new Map<string, TriageGroup>();
-  for (const row of data ?? []) {
-    const description = String(row.description ?? "");
-    // An all-noise description cleans to "" — group it under its raw text.
-    const pattern = cleanMerchantPattern(description) || description.trim().toLowerCase();
-    if (!pattern) continue;
-    let group = groups.get(pattern);
-    if (!group) {
-      group = { pattern, count: 0, total: 0, sampleDescription: description, ids: [] };
-      groups.set(pattern, group);
-    }
-    group.count += 1;
-    group.total += Number(row.amount);
-    group.ids.push(String(row.id));
-  }
-  return [...groups.values()]
-    .map((g) => ({ ...g, total: Math.round(g.total * 100) / 100 }))
-    .sort((a, b) => b.count - a.count || b.total - a.total);
+  return groupByMerchant(
+    (data ?? []).map((row) => ({
+      id: String(row.id),
+      description: String(row.description ?? ""),
+      amount: Number(row.amount),
+    })),
+  );
 }
 
 /**
