@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import type { SunburstRow } from "@/lib/charts/sunburst-data";
 
 /**
  * All money aggregations live here, and they ALL exclude category='Transfer'
@@ -90,6 +91,22 @@ export async function getInsights(filters: { month?: string; accountId?: string 
     topMerchants,
     monthlyTotals,
   };
+}
+
+/** Rows for the Dashboard sunburst, in the same scope as getInsights and
+ *  Transfer-free (hard rule #3). The client chart builds the tree. */
+export async function getSunburstRows(filters: {
+  month?: string;
+  accountId?: string;
+}): Promise<SunburstRow[]> {
+  const rows = await fetchNonTransferRows(filters.accountId);
+  const scoped = filters.month ? rows.filter((r) => monthOf(r.date) === filters.month) : rows;
+  return scoped.map(({ description, amount, flow, category }) => ({
+    description,
+    amount,
+    flow,
+    category,
+  }));
 }
 
 export type MonthlyReport = {
