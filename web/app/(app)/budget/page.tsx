@@ -1,4 +1,5 @@
 import { getBudget } from "@/lib/data/budget";
+import { getSelectableCategories } from "@/lib/data/categories";
 import { selectIncome } from "@/lib/charts/sankey-data";
 import { computeCascade } from "@/lib/budget-math";
 import { PageHeader } from "@/components/app/page-header";
@@ -7,7 +8,7 @@ import { BudgetSankey } from "@/components/charts/budget-sankey";
 import { BudgetBuilder } from "./budget-builder";
 
 export default async function BudgetPage() {
-  const data = await getBudget();
+  const [data, categories] = await Promise.all([getBudget(), getSelectableCategories()]);
 
   const expenseLimits = data.categories
     .filter((c) => c.flow_type === "expense")
@@ -55,7 +56,7 @@ export default async function BudgetPage() {
             </CardContent>
           </Card>
         )}
-        <BudgetBuilder data={data} />
+        <BudgetBuilder data={data} categories={categories} />
       </div>
     </div>
   );

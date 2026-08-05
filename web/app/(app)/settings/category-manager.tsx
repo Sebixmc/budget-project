@@ -1,13 +1,61 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { isReservedFromDelete, isReservedFromRename } from "@/lib/categories";
 import type { CategoryUsage } from "@/lib/data/categories";
-import { deleteCategory, renameCategory } from "./actions";
+import { createCategory, deleteCategory, renameCategory } from "./actions";
+
+function AddCategory({ existingNames }: { existingNames: string[] }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const trimmed = value.trim();
+  const duplicate =
+    trimmed.length > 0 && existingNames.some((n) => n.toLowerCase() === trimmed.toLowerCase());
+
+  function submit() {
+    if (!trimmed) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await createCategory(value);
+      if (!res.ok) setError(res.error ?? "Something went wrong.");
+      else setValue("");
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(null);
+          }}
+          placeholder="New category name"
+          aria-label="New category name"
+          className="h-9 max-w-xs"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <Button size="sm" onClick={submit} disabled={pending || !trimmed || duplicate}>
+          <Plus /> Add
+        </Button>
+        {duplicate && <Badge variant="warning">Already exists</Badge>}
+      </div>
+      {error && <p className="text-sm text-negative">{error}</p>}
+    </div>
+  );
+}
 
 function CategoryRow({
   cat,
@@ -136,10 +184,11 @@ export function CategoryManager({ categories }: { categories: CategoryUsage[] })
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
-        Rename a category to fix its label everywhere, or type an existing name to merge two
-        together. Renaming won&apos;t change how future imports auto-categorize unless you save a
-        merchant rule.
+        Add your own category, or rename one to fix its label everywhere — type an existing name to
+        merge two together. Renaming or adding won&apos;t change how future imports auto-categorize
+        unless you save a merchant rule.
       </p>
+      <AddCategory existingNames={names} />
       <div className="divide-y divide-border">
         {categories.length === 0 ? (
           <p className="py-4 text-sm text-muted-foreground">No categories yet.</p>

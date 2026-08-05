@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isReservedFromDelete,
   isReservedFromRename,
+  validateCreate,
   validateDelete,
   validateRename,
 } from "./categories";
@@ -39,6 +40,28 @@ describe("validateDelete", () => {
   it("refuses to delete Transfer and Other", () => {
     expect(validateDelete("Transfer")).toBe("reserved");
     expect(validateDelete("Other")).toBe("reserved");
+  });
+});
+
+describe("validateCreate", () => {
+  const existing = ["Groceries", "Eating Out", "Other"];
+  it("allows a fresh name", () => {
+    expect(validateCreate("Childcare", existing)).toBeNull();
+    expect(validateCreate("  Tithing  ", existing)).toBeNull();
+  });
+  it("rejects empty / whitespace-only names", () => {
+    expect(validateCreate("", existing)).toBe("empty");
+    expect(validateCreate("   ", existing)).toBe("empty");
+  });
+  it("rejects reserved names (case-insensitive)", () => {
+    expect(validateCreate("Transfer", existing)).toBe("reserved");
+    expect(validateCreate("other", existing)).toBe("reserved");
+    expect(validateCreate("Uncategorized", existing)).toBe("reserved");
+  });
+  it("rejects duplicates case-insensitively", () => {
+    expect(validateCreate("Groceries", existing)).toBe("duplicate");
+    expect(validateCreate("groceries", existing)).toBe("duplicate");
+    expect(validateCreate(" eating out ", existing)).toBe("duplicate");
   });
 });
 

@@ -6,17 +6,20 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ALL_CATEGORIES } from "@/lib/categorizer";
+import { getSelectableCategories } from "@/lib/data/categories";
 import { createRule, deleteRule, reapplyRules } from "./actions";
 
 type Rule = { id: string; pattern: string; category: string; created_at: string };
 
 export default async function RulesPage() {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("merchant_rules")
-    .select("id, pattern, category, created_at")
-    .order("created_at", { ascending: false });
+  const [{ data }, categories] = await Promise.all([
+    supabase
+      .from("merchant_rules")
+      .select("id, pattern, category, created_at")
+      .order("created_at", { ascending: false }),
+    getSelectableCategories(),
+  ]);
   const rules = (data ?? []) as Rule[];
 
   return (
@@ -47,7 +50,7 @@ export default async function RulesPage() {
                 <option value="" disabled>
                   Choose…
                 </option>
-                {ALL_CATEGORIES.map((c) => (
+                {categories.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>

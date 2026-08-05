@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
-import { ALL_CATEGORIES } from "@/lib/categorizer";
 import {
   computeCascade,
   sumIncomeSources,
@@ -39,7 +38,7 @@ const toMonthly = (value: number, unit: GoalUnit) =>
  * goals first, then category envelopes), with a sticky left-to-allocate bar.
  * Saved stages collapse to a one-line result; clicking expands them.
  */
-export function BudgetBuilder({ data }: { data: BudgetData }) {
+export function BudgetBuilder({ data, categories }: { data: BudgetData; categories: string[] }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const hasProfile = data.profile !== null;
@@ -102,7 +101,7 @@ export function BudgetBuilder({ data }: { data: BudgetData }) {
   // historical average desc; no-history categories last.
   const envelopeCats = [
     ...new Set([
-      ...ALL_CATEGORIES.filter((c) => c !== "Transfer" && c !== "Income"),
+      ...categories.filter((c) => c !== "Transfer" && c !== "Income"),
       ...savedLimits.keys(),
     ]),
   ]
