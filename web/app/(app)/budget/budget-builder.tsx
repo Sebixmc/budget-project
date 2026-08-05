@@ -485,16 +485,17 @@ export function BudgetBuilder({ data, categories }: { data: BudgetData; categori
               <Plus /> Add goal
             </Button>
           </div>
-
-          <p className="border-t border-border pt-3 text-sm">
-            Left to spend{" "}
-            <span className={cn("tabular font-semibold", leftToSpend < 0 && "text-negative")}>
-              {formatCurrency(leftToSpend)}
-            </span>{" "}
-            / mo
-          </p>
         </div>
       </StageCard>
+
+      {/* Running total: stays visible whether or not the goals card is open. */}
+      <p className="px-1 text-sm text-muted-foreground">
+        Left to spend after savings{" "}
+        <span className={cn("tabular font-semibold text-foreground", leftToSpend < 0 && "text-negative")}>
+          {formatCurrency(leftToSpend)}
+        </span>{" "}
+        / mo
+      </p>
 
       {/* ---- 5 · Monthly envelopes + sticky remainder bar ---- */}
       <div className="flex flex-col gap-4">
