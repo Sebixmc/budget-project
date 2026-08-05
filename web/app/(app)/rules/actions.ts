@@ -13,7 +13,7 @@ export async function createRule(formData: FormData) {
   await supabase
     .from("merchant_rules")
     .upsert({ pattern, category }, { onConflict: "user_id,pattern" });
-  revalidatePath("/rules");
+  revalidatePath("/settings");
 }
 
 export async function deleteRule(formData: FormData) {
@@ -21,7 +21,7 @@ export async function deleteRule(formData: FormData) {
   if (!id) return;
   const supabase = await createClient();
   await supabase.from("merchant_rules").delete().eq("id", id);
-  revalidatePath("/rules");
+  revalidatePath("/settings");
 }
 
 /** Escape LIKE wildcards so a pattern matches as a literal substring, the same
@@ -61,7 +61,7 @@ export async function createRuleAndApply(
     .select("id");
   if (error) return { ok: false, updated: 0, error: error.message };
 
-  revalidatePath("/rules");
+  revalidatePath("/settings");
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
   return { ok: true, updated: data?.length ?? 0 };
@@ -95,7 +95,7 @@ export async function reapplyRules() {
       .eq("category_source", "auto")
       .ilike("description", `%${rule.pattern}%`);
   }
-  revalidatePath("/rules");
+  revalidatePath("/settings");
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
 }

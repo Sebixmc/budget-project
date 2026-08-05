@@ -258,12 +258,14 @@ Sectioned preferences hub with a sticky in-page jump nav (spec: [`specs/settings
   - Delete account: confirmation showing transaction count; cascades to `transactions` + `uploads` rows
   - Add account form: name, owner, type, bank_format
 - **Categories** — per-category tx count + budget badge; rename (typing an existing name = merge) and delete (moves its transactions/rules to `Other`). `Transfer` is locked (protects the transfers-excluded invariant); `Other` can't be deleted
+- **Rules** — merchant auto-categorization rules moved in from the old top-level `/rules` tab: add/delete a rule and "Re-apply to existing". Rules beat keyword matching on future imports; manual edits are never overwritten (hard rule #7)
 - **Budget preferences** — monthly-income estimate (shared with the Budget page) + default landing page after sign-in (allowlisted; the login flow redirects there)
 - **Profile & security** — signed-in email (read-only) + change-password form (`supabase.auth.updateUser`)
 - **Data & privacy** — export all the user's data as JSON (`/settings/export` route, RLS-scoped) + danger-zone "delete all transactions" (type-to-confirm)
 - Backed by a new `user_settings` table (`user_id` PK + RLS, migration `0004_user_settings.sql`) for the default-page preference
 
-### Rules (`/rules`)
+### Rules (moved into Settings → Rules)
+Rules are no longer a top-level nav tab — the section now lives under **Settings → Rules** (above). `/rules` remains as a permanent `redirect("/settings#rules")` so old links and bookmarks still resolve.
 - Table of saved merchant rules (pattern, category, created date)
 - Add rule manually
 - Delete individual rules

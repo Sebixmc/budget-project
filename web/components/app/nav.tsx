@@ -8,7 +8,6 @@ import {
   CalendarRange,
   PiggyBank,
   Settings,
-  Tags,
   Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,7 +17,6 @@ const items = [
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/monthly", label: "Monthly", icon: CalendarRange },
   { href: "/budget", label: "Budget", icon: PiggyBank },
-  { href: "/rules", label: "Rules", icon: Tags },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/upload", label: "Upload", icon: Upload },
 ];

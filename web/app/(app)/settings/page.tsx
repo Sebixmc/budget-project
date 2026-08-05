@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getAccounts } from "@/lib/data/accounts";
-import { getCategoryUsage } from "@/lib/data/categories";
+import { getCategoryUsage, getSelectableCategories } from "@/lib/data/categories";
 import { getUserSettings } from "@/lib/data/settings";
 import { PageHeader } from "@/components/app/page-header";
 import { SettingsSection } from "@/components/app/settings-section";
@@ -11,6 +11,7 @@ import { BANK_FORMATS } from "@/lib/parser";
 import { AccountCard } from "./account-card";
 import { AppearanceCard } from "./appearance-card";
 import { CategoryManager } from "./category-manager";
+import { RulesManager } from "./rules-card";
 import { PreferencesCard } from "./preferences-card";
 import { SecurityCard } from "./security-card";
 import { DataCard } from "./data-card";
@@ -20,6 +21,7 @@ const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "accounts", label: "Accounts" },
   { id: "categories", label: "Categories" },
+  { id: "rules", label: "Rules" },
   { id: "preferences", label: "Budget" },
   { id: "security", label: "Profile & security" },
   { id: "data", label: "Data & privacy" },
@@ -30,18 +32,26 @@ export default async function SettingsPage() {
   const [
     accounts,
     categories,
+    selectableCategories,
     settings,
     {
       data: { user },
     },
     { data: incomeRow },
+    { data: ruleRows },
   ] = await Promise.all([
     getAccounts(),
     getCategoryUsage(),
+    getSelectableCategories(),
     getUserSettings(),
     supabase.auth.getUser(),
     supabase.from("budget_income").select("monthly_estimate").maybeSingle(),
+    supabase
+      .from("merchant_rules")
+      .select("id, pattern, category, created_at")
+      .order("created_at", { ascending: false }),
   ]);
+  const rules = ruleRows ?? [];
 
   // Transaction count per account (few accounts → a handful of count queries).
   const counts = await Promise.all(
@@ -148,6 +158,14 @@ export default async function SettingsPage() {
             description="Rename, merge, or delete the categories on your transactions."
           >
             <CategoryManager categories={categories} />
+          </SettingsSection>
+
+          <SettingsSection
+            id="rules"
+            title="Rules"
+            description="Auto-categorize merchants you've named. Rules beat keyword matching on future imports."
+          >
+            <RulesManager rules={rules} categories={selectableCategories} />
           </SettingsSection>
 
           <SettingsSection
