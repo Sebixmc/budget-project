@@ -1,0 +1,53 @@
+{
+  "name": "budget-project — Claude sandbox",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "TZ": "${localEnv:TZ:America/Denver}"
+    }
+  },
+  // NET_ADMIN + NET_RAW are required so init-firewall.sh can install the
+  // default-deny egress firewall. That firewall is what makes running
+  // `claude --dangerously-skip-permissions` in here a reasonable thing to do.
+  "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-python.python"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  },
+  "remoteUser": "node",
+  "mounts": [
+    // Persist shell history across container rebuilds.
+    "source=budget-project-bashhistory,target=/commandhistory,type=volume",
+    // Persist Claude credentials/config across rebuilds so you don't re-auth every time.
+    "source=budget-project-claude-config,target=/home/node/.claude,type=volume"
+  ],
+  "remoteEnv": {
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "SHELL": "/bin/zsh"
+  },
+  // 3000 = Next.js dev (web/), 5001 = legacy Flask app at the repo root.
+  "forwardPorts": [3000, 5001],
+  "portsAttributes": {
+    "3000": { "label": "next dev (web/)", "onAutoForward": "notify" },
+    "5001": { "label": "legacy flask", "onAutoForward": "silent" }
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
+  "workspaceFolder": "/workspace",
+  // The firewall MUST come up before anything else runs. If it fails, the
+  // container still starts but you should not use bypass-permissions mode.
+  // This repo has no root package.json — the Node app lives in web/ and uses
+  // npm (package-lock.json), not pnpm.
+  "postCreateCommand": "sudo /usr/local/bin/init-firewall.sh && npm --prefix web install"
+}
