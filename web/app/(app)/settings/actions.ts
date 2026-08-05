@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { BANK_FORMATS } from "@/lib/parser";
-import { validateDelete, validateRename } from "@/lib/categories";
+import { validateCreate, validateDelete, validateRename } from "@/lib/categories";
+import { getSelectableCategories } from "@/lib/data/categories";
 import { isValidDefaultPage } from "@/lib/settings";
 
 function validBankFormat(v: string): boolean {
@@ -57,6 +58,35 @@ export async function deleteAccount(formData: FormData) {
 export type ActionResult = { ok: boolean; error?: string };
 
 /**
+ * Create a user-defined category. Validated against every existing category
+ * (built-in, custom, or in-use) so names can't collide or shadow a reserved
+ * one. Persisted in `user_categories` so it survives with zero transactions;
+ * RLS scopes the write to the user. Auto-categorization is untouched — a custom
+ * category has no keywords, so imports never auto-assign to it.
+ */
+export async function createCategory(name: string): Promise<ActionResult> {
+  const n = name.trim();
+  const existing = await getSelectableCategories();
+  const invalid = validateCreate(n, existing);
+  if (invalid) {
+    const msg =
+      invalid === "reserved"
+        ? "That name is reserved."
+        : invalid === "duplicate"
+          ? "That category already exists."
+          : "Enter a category name.";
+    return { ok: false, error: msg };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("user_categories").insert({ name: n });
+  if (error) return { ok: false, error: error.message };
+
+  revalidateMoneyViews();
+  return { ok: true };
+}
+
+/**
  * Rename category `oldName` → `newName` across all of the user's data. If
  * `newName` already exists this is a MERGE: transactions/rules move over and the
  * existing budget target for `newName` is kept. Never touches `Transfer`
@@ -99,6 +129,27 @@ export async function renameCategory(oldName: string, newName: string): Promise<
     await supabase.from("budget_categories").update({ category: to }).eq("category", from);
   }
 
+  // Carry the rename into user_categories too: a custom category can have zero
+  // transactions/rules/budget, so its only trace is this row — without this the
+  // rename hits nothing and the old name lingers in every dropdown. There's no
+  // UPDATE policy on the table (owner-only select/insert/delete), and its PK is
+  // (user_id, name), so re-home it as delete-then-insert, skipping the insert
+  // when `to` already exists (the merge case).
+  const { data: fromCustom } = await supabase
+    .from("user_categories")
+    .select("name")
+    .eq("name", from)
+    .maybeSingle();
+  if (fromCustom) {
+    const { data: toCustom } = await supabase
+      .from("user_categories")
+      .select("name")
+      .eq("name", to)
+      .maybeSingle();
+    await supabase.from("user_categories").delete().eq("name", from);
+    if (!toCustom) await supabase.from("user_categories").insert({ name: to });
+  }
+
   revalidateMoneyViews();
   return { ok: true };
 }
@@ -125,6 +176,9 @@ export async function deleteCategory(name: string): Promise<ActionResult> {
   if (error) return { ok: false, error: error.message };
   await supabase.from("merchant_rules").update({ category: "Other" }).eq("category", n);
   await supabase.from("budget_categories").delete().eq("category", n);
+  // Also drop it from the custom-category store, if it was one, so it stops
+  // appearing in dropdowns.
+  await supabase.from("user_categories").delete().eq("name", n);
 
   revalidateMoneyViews();
   return { ok: true };

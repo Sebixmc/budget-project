@@ -6,7 +6,6 @@ import { ArrowDown, ArrowUp, Pencil } from "lucide-react";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
-import { ALL_CATEGORIES } from "@/lib/categorizer";
 import { cleanMerchantPattern } from "@/lib/merchant";
 import type { Transaction } from "@/lib/data/transactions";
 import { RulePrompt } from "@/components/app/rule-prompt";
@@ -33,7 +32,13 @@ function sortValue(t: Transaction, key: SortKey): string | number {
   return t[key];
 }
 
-export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
+export function TransactionsTable({
+  transactions,
+  categories,
+}: {
+  transactions: Transaction[];
+  categories: string[];
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -183,7 +188,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
           <div className="w-52">
             <Select value={bulkCat} onChange={(e) => setBulkCat(e.target.value)}>
               <option value="">Set category…</option>
-              {ALL_CATEGORIES.map((c) => (
+              {categories.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
@@ -242,7 +247,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
                       onChange={(e) => onCategory(t, e.target.value)}
                       disabled={pending}
                     >
-                      {ALL_CATEGORIES.map((c) => (
+                      {categories.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>

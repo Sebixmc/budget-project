@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getAccounts } from "@/lib/data/accounts";
 import { getTransactions, type Flow } from "@/lib/data/transactions";
-import { ALL_CATEGORIES } from "@/lib/categorizer";
+import { getSelectableCategories } from "@/lib/data/categories";
 import { PageHeader } from "@/components/app/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
@@ -20,7 +20,7 @@ type SearchParams = Promise<{
 
 export default async function TransactionsPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const accounts = await getAccounts();
+  const [accounts, categories] = await Promise.all([getAccounts(), getSelectableCategories()]);
   const transactions = await getTransactions({
     month: sp.month || undefined,
     accountId: sp.account || undefined,
@@ -48,7 +48,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
             </Select>
             <Select name="category" defaultValue={sp.category ?? ""} aria-label="Category">
               <option value="">All categories</option>
-              {ALL_CATEGORIES.map((c) => (
+              {categories.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
@@ -78,7 +78,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
 
       <Card>
         <CardContent className="pt-6">
-          <TransactionsTable transactions={transactions} />
+          <TransactionsTable transactions={transactions} categories={categories} />
         </CardContent>
       </Card>
     </div>
